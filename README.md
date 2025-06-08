@@ -49,15 +49,15 @@
 <span style="color: #00BCD4;">**请在仔细阅读游戏规则条款后，再选择是否安装使用本插件，谢谢！**</span>
 
 
-### 🔧 Installation / 安装说明
+## 🔧 Installation / 安装说明
+
+### 安装地址:[https://greasyfork.org/zh-CN/scripts/538797-mwi-autobuyer](https://greasyfork.org/zh-CN/scripts/538797-mwi-autobuyer)
 
 1. Install <span style="color: #9C27B0;">**Tampermonkey**</span> or similar userscript manager
-2. Click the <span style="color: #4CAF50;">**install button**</span> on this page
-3. Enjoy the enhanced UI!
-
+2. Install this scriptt
+###
 1. 安装 <span style="color: #9C27B0;">**Tampermonkey**</span> 或类似的用户脚本管理器
-2. 点击本页面的<span style="color: #4CAF50;">**安装按钮**</span>
-3. 享受增强的用户界面！
+2. 安装此脚本
 
 ---
 
