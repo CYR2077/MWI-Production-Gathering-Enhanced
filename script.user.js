@@ -3,8 +3,7 @@
 // @name:zh-CN   银河奶牛-自动购买材料
 // @namespace    http://tampermonkey.net/
 // @version      1.0
-// @description  Automatically purchase materials in MilkyWayIdle. Shows required material quantities in queue interface and provides one-click purchase functionality.
-// @description:zh-CN  在添加队列界面显示需要的材料数量，添加一键购买功能
+// @description  自动计算需要的材料数量，一键购买缺少的材料(Automatically calculate the required material quantities and purchase missing materials with one click.)
 // @author       XIxixi297
 // @license      GPL3
 // @match        https://www.milkywayidle.com/*
