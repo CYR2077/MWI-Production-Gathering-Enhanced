@@ -3,7 +3,7 @@
 // @name:zh-CN   银河奶牛-自动购买材料
 // @namespace    http://tampermonkey.net/
 // @version      1.0
-// @description  Automatically purchase materials in MilkyWay Idle game. Shows required material quantities in queue interface and provides one-click purchase functionality.
+// @description  Automatically purchase materials in MilkyWayIdle. Shows required material quantities in queue interface and provides one-click purchase functionality.
 // @description:zh-CN  在添加队列界面显示需要的材料数量，添加一键购买功能
 // @author       XIxixi297
 // @license      GPL3
@@ -32,7 +32,7 @@
     // 语言配置
     const LANG = {
         zh: {
-            autoBuyButton: '🛒 自动购买缺失材料',
+            autoBuyButton: '🛒 自动购买缺少的材料',
             autoBuyButtonActive: '⏳ 购买中...',
             missingPrefix: '还差:',
             missingUnit: '个',
@@ -48,7 +48,7 @@
             viewAllItems: '查看所有物品'
         },
         en: {
-            autoBuyButton: '🛒 Auto Buy Missing Materials',
+            autoBuyButton: '🛒 Auto Buy Needed Materials',
             autoBuyButtonActive: '⏳ Purchasing...',
             missingPrefix: 'Need:',
             missingUnit: '',
