@@ -4,8 +4,9 @@
 // @namespace    http://tampermonkey.net/
 // @version      1.0.3
 // @description  自动计算需要的材料数量，一键购买缺少的材料(Automatically calculate the required material quantities and purchase missing materials with one click.)
+// @description:en  Automatically calculate the required material quantities and purchase missing materials with one click.
 // @author       XIxixi297
-// @license      GPL3
+// @license      CC-BY-NC-SA-4.0
 // @match        https://www.milkywayidle.com/*
 // @match        https://test.milkywayidle.com/*
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=milkywayidle.com
