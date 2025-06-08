@@ -2,7 +2,7 @@
 // @name         MWI-AutoBuyer
 // @name:zh-CN   银河奶牛-自动购买材料
 // @namespace    http://tampermonkey.net/
-// @version      1.0.1
+// @version      1.0.2
 // @description  自动计算需要的材料数量，一键购买缺少的材料(Automatically calculate the required material quantities and purchase missing materials with one click.)
 // @author       XIxixi297
 // @license      GPL3
@@ -64,11 +64,10 @@
         }
     };
 
-    // 获取当前语言
     const currentLang = (navigator.language || 'en').toLowerCase().includes('zh') ? 'zh' : 'en';
     const L = LANG[currentLang];
 
-    // 工具函数
+    // 工具函数模块
     const utils = {
         sleep: (ms) => new Promise(resolve => setTimeout(resolve, ms)),
         
@@ -90,7 +89,7 @@
         }
     };
 
-    // 通知系统
+    // 通知系统模块
     const toast = {
         container: null,
         
@@ -127,7 +126,7 @@
         }
     };
 
-    // 获取物品数量（支持K/M/B格式）
+    // 物品数量获取模块
     async function getItemQuantity(itemName) {
         const inventoryItems = utils.getElements.inventoryItems();
         const targetItem = Array.from(inventoryItems).find(item => {
@@ -142,7 +141,6 @@
 
         const countText = countElement.textContent.trim();
         
-        // 如果是K/M/B格式，通过悬停获取精确数量
         if (/\d+[KMB]$/i.test(countText)) {
             return new Promise((resolve) => {
                 targetItem.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
@@ -173,7 +171,7 @@
         return utils.parseKMB(countText);
     }
 
-    // 计算材料需求
+    // 材料需求计算模块
     async function calculateMaterialRequirements() {
         const productionInput = utils.getElements.productionInput();
         const itemRequirements = utils.getElements.itemRequirements();
@@ -204,7 +202,7 @@
         return requirements;
     }
 
-    // 更新材料显示
+    // 材料显示更新模块
     async function updateMaterialDisplays() {
         const requirements = await calculateMaterialRequirements();
         const infoSpans = document.querySelectorAll('.material-info-span');
@@ -218,7 +216,7 @@
         });
     }
 
-    // 市场操作 - 使用原始版本的购买逻辑
+    // 市场操作模块
     const market = {
         enter() {
             try {
@@ -231,7 +229,6 @@
                             const buttons = document.getElementsByClassName("Button_button__1Fe9z");
                             let viewAllButton = null;
 
-                            // 查找当前语言的"查看所有物品"按钮
                             for (let button of buttons) {
                                 const buttonText = button.textContent.trim();
                                 if (buttonText === "查看所有物品" || buttonText === "View All Items") {
@@ -243,7 +240,6 @@
                             if (viewAllButton) {
                                 viewAllButton.click();
                             } else {
-                                // 备用选项卡按钮
                                 const tabButton = document.getElementsByClassName("MuiBadge-root TabsComponent_badge__1Du26 css-1rzb3uu")[2];
                                 if (tabButton) {
                                     tabButton.click();
@@ -314,11 +310,9 @@
                         throw new Error(`无法找到 ${item.materialName} 的可点击元素`);
                     }
 
-                    // 点击市场中的物品
                     item.marketElement.click();
                     await utils.sleep(800);
 
-                    // 查找并点击操作按钮
                     const actionButton = document.getElementsByClassName("MarketplacePanel_actionButtonText__3xIfd")[0];
                     if (!actionButton) {
                         throw new Error('未找到购买菜单按钮');
@@ -327,13 +321,11 @@
                     actionButton.click();
                     await utils.sleep(500);
 
-                    // 查找数量输入字段
                     const quantityInput = document.getElementsByClassName("Input_input__2-t98")[1];
                     if (!quantityInput) {
                         throw new Error('未找到数量输入字段');
                     }
 
-                    // 以编程方式设置数量值
                     const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
                     nativeInputValueSetter.call(quantityInput, item.supplementNeeded.toString());
 
@@ -343,7 +335,6 @@
                     await utils.sleep(500);
                     await this.adjustPrice(item.supplementNeeded);
 
-                    // 查找并点击购买按钮
                     const buyButton = document.getElementsByClassName("Button_button__1Fe9z Button_success__6d6kU")[1];
                     if (!buyButton) {
                         throw new Error('未找到购买按钮');
@@ -430,7 +421,6 @@
                 const buttons = document.getElementsByClassName("Button_button__1Fe9z");
                 let viewAllButton = null;
 
-                // 查找"查看所有物品"按钮
                 for (let button of buttons) {
                     const buttonText = button.textContent.trim();
                     if (buttonText === "查看所有物品" || buttonText === "View All Items") {
@@ -450,7 +440,7 @@
         }
     };
 
-    // 完整购买流程
+    // 购买流程控制模块
     async function completePurchaseProcess() {
         const requirements = await calculateMaterialRequirements();
         const needToBuy = requirements.filter(item => item.supplementNeeded > 0);
@@ -478,7 +468,6 @@
             ).join(', ');
             toast.show(`${L.startPurchasing} ${foundItems.length}${L.itemsColon}${itemList}`, 'info');
 
-            // 使用原始版本的购买逻辑
             for (let i = 0; i < foundItems.length; i++) {
                 const item = foundItems[i];
 
@@ -504,25 +493,22 @@
         }, 1000);
     }
 
-    // UI 观察器和事件绑定
+    // UI观察器和事件处理模块
     let isCalculationInterfaceOpen = false;
     const hoveredElements = new Set();
 
     const observer = new MutationObserver(() => {
-        // 检查界面状态
         const itemRequirements = utils.getElements.itemRequirements();
         const isOpen = !!itemRequirements;
         
         if (isOpen !== isCalculationInterfaceOpen) {
             isCalculationInterfaceOpen = isOpen;
             if (!isOpen) {
-                // 清理悬停元素
                 hoveredElements.forEach(el => el.dispatchEvent(new MouseEvent("mouseout", { bubbles: true })));
                 hoveredElements.clear();
             }
         }
 
-        // 处理材料需求显示
         document.querySelectorAll(".SkillActionDetail_itemRequirements__3SPnA").forEach(req => {
             if (req.dataset.modified) return;
             req.dataset.modified = "true";
@@ -543,9 +529,12 @@
             setTimeout(updateMaterialDisplays, 100);
         });
 
-        // 添加自动购买按钮
         document.querySelectorAll(".SkillActionDetail_regularComponent__3oCgr").forEach(panel => {
             if (panel.dataset.buttonInserted) return;
+            
+            const itemRequirements = panel.querySelector(".SkillActionDetail_itemRequirements__3SPnA");
+            if (!itemRequirements) return;
+            
             panel.dataset.buttonInserted = "true";
 
             const nameDiv = panel.querySelector(".SkillActionDetail_name__3erHV");
@@ -561,7 +550,6 @@
                 boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
             });
 
-            // 悬停效果
             btn.addEventListener("mouseenter", () => {
                 btn.style.transform = "translateY(-1px)";
                 btn.style.boxShadow = "0 4px 8px rgba(0,0,0,0.2)";
@@ -571,7 +559,6 @@
                 btn.style.boxShadow = "0 2px 4px rgba(0,0,0,0.1)";
             });
 
-            // 点击事件
             btn.addEventListener("click", async () => {
                 btn.disabled = true;
                 btn.textContent = L.autoBuyButtonActive;
@@ -591,17 +578,14 @@
         });
     });
 
-    // 监听输入变化
     document.addEventListener('input', (e) => {
         if (e.target.classList.contains('Input_input__2-t98')) {
             setTimeout(updateMaterialDisplays, 100);
         }
     });
 
-    // 开始观察
     observer.observe(document.body, { childList: true, subtree: true });
 
-    // 定期清理工具提示
     setInterval(() => {
         document.querySelectorAll('.ItemTooltipText_itemTooltipText__zFq3A').forEach(tooltip => {
             if (tooltip.parentElement) tooltip.parentElement.style.display = 'none';
