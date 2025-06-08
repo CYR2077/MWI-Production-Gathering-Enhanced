@@ -14,9 +14,9 @@
 
 * * *
 
-|     |     |
-|:---:|:---:|
-| ![English Screenshot](img/2.png) | ![Chinese Screenshot](img/1.png) |
+
+![English Screenshot](img/2.png)
+![Chinese Screenshot](img/1.png)
 
 ## About Script Behavior in This Plugin:
 
