@@ -15,8 +15,10 @@
 * * *
 
 
-![Chinese Screenshot](img/1.png)
-![English Screenshot](img/2.png)
+|||
+|---------|---------|
+| ![Chinese Screenshot 1](img/1.png) | ![English Screenshot 1](img/3.png) |
+| ![Chinese Screenshot 2](img/2.png) | ![English Screenshot 2](img/4.png) |
 
 ---
 
