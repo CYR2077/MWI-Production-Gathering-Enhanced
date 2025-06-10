@@ -3,7 +3,7 @@
 // @name:zh-CN   [银河奶牛]自动计算购买材料
 // @name:en      MWI-AutoBuyer
 // @namespace    http://tampermonkey.net/
-// @version      2.1.0
+// @version      2.2.0
 // @description  自动计算制造、烹饪、房屋等所需材料，一键购买缺少的材料(Automatically calculate the required material quantities and purchase needed materials with one click.)
 // @description:en  Automatically calculate the required material quantities and purchase needed materials with one click.
 // @author       XIxixi297
@@ -24,16 +24,22 @@
 (function () {
     'use strict';
 
-    // 配置和语言
+    // 语言配置
     const LANG = (navigator.language || 'en').toLowerCase().includes('zh') ? {
-        autoBuyButton: '🛒 自动购买',
-        autoBuyButtonActive: '⏳ 购买中...',
+        directBuyButton: '直接购买（左一）',
+        bidOrderButton: '求购订单（右一）',
+        directBuyButtonActive: '⏳ 购买中...',
+        bidOrderButtonActive: '📋 提交中...',
         missingPrefix: '缺:',
         noMaterialsNeeded: '材料充足！',
-        startPurchasing: '开始购买',
+        startDirectPurchasing: '开始直接购买',
+        startBidOrdering: '开始提交求购订单',
         purchased: '已购买',
+        orderSubmitted: '订单已提交',
         purchaseFailed: '购买失败',
+        orderFailed: '订单提交失败',
         purchaseComplete: '购买完成！',
+        orderComplete: '订单提交完成！',
         purchaseError: '购买出错，请检查控制台',
         wsNotAvailable: 'WebSocket日志查看器未可用，请确保已启用',
         waitingForLogger: '等待WebSocket日志查看器...',
@@ -41,20 +47,28 @@
         requestFailed: '请求失败',
         requestTimeout: '请求超时',
         allPurchasesFailed: '所有购买都失败了，请检查控制台',
+        allOrdersFailed: '所有订单都失败了，请检查控制台',
         purchaseSuccess: '成功购买',
+        orderSuccess: '成功提交',
         materials: '种材料',
         totalCost: '共花费',
         coins: '金币',
         each: '个'
     } : {
-        autoBuyButton: '🛒 Auto Buy',
-        autoBuyButtonActive: '⏳ Buying...',
+        directBuyButton: 'Buy from WTS',
+        bidOrderButton: 'New Buy Listing',
+        directBuyButtonActive: '⏳ Buying...',
+        bidOrderButtonActive: '📋 Submitting...',
         missingPrefix: 'Need:',
         noMaterialsNeeded: 'All materials sufficient!',
-        startPurchasing: 'Start purchasing',
+        startDirectPurchasing: 'Start direct purchasing',
+        startBidOrdering: 'Start submitting bid orders',
         purchased: 'Purchased',
+        orderSubmitted: 'Order submitted',
         purchaseFailed: 'Purchase failed',
+        orderFailed: 'Order submit failed',
         purchaseComplete: 'Purchase completed!',
+        orderComplete: 'Orders submitted!',
         purchaseError: 'Purchase error, check console',
         wsNotAvailable: 'WebSocket logger not available, ensure it is enabled',
         waitingForLogger: 'Waiting for WebSocket logger...',
@@ -62,7 +76,9 @@
         requestFailed: 'Request failed',
         requestTimeout: 'Request timeout',
         allPurchasesFailed: 'All purchases failed, check console',
+        allOrdersFailed: 'All orders failed, check console',
         purchaseSuccess: 'Successfully purchased',
+        orderSuccess: 'Successfully submitted',
         materials: 'materials',
         totalCost: 'total cost',
         coins: 'coins',
@@ -184,8 +200,12 @@
             }
         }
 
-        async batchPurchase(items, delayBetween = 800) {
-            return await this.sendRequest('batch_purchase', { items, delayBetween });
+        async batchDirectPurchase(items, delayBetween = 800) {
+            return await this.sendRequest('batch_direct_purchase', { items, delayBetween });
+        }
+
+        async batchBidOrder(items, delayBetween = 800) {
+            return await this.sendRequest('batch_bid_order', { items, delayBetween });
         }
     }
 
@@ -291,25 +311,20 @@
                 }
             }
 
-            // 计算升级物品需求（仅针对production类型）
+            // 计算升级物品需求（仅production类型）
             if (type === 'production') {
                 const upgradeContainer = container.querySelector(selectors.upgradeSelector);
                 if (upgradeContainer) {
                     const upgradeItem = upgradeContainer.querySelector('.Item_item__2De2O');
                     
-                    // 无论是否选择了升级物品，都要计算升级需求
                     let materialName = '升级物品';
                     let itemId = null;
                     let currentStock = 0;
-                    
-                    // 升级物品的需求数量总是等于生产数量
                     const totalNeeded = productionQuantity;
                     
                     if (upgradeItem) {
-                        // 获取升级物品信息，无论是否选择
                         const svgElement = upgradeItem.querySelector('svg[aria-label]');
                         if (svgElement) {
-                            // 升级物品的名称存储在svg的aria-label属性中
                             const itemName = svgElement.getAttribute('aria-label');
                             const extractedId = extractItemId(svgElement);
                             
@@ -320,7 +335,7 @@
                             }
                         }
                         
-                        // 额外检查：尝试从React props获取升级物品信息
+                        // 从React props获取升级物品信息
                         if (!itemId) {
                             try {
                                 const reactKey = Object.keys(upgradeItem).find(key => key.startsWith('__reactProps'));
@@ -358,6 +373,22 @@
             return requirements;
         }
     }
+    
+    //WHAT?
+    (()=> {
+    const toast = new Toast();
+    const k = 'ArrowUp,ArrowUp,ArrowDown,ArrowDown,ArrowLeft,ArrowRight,ArrowLeft,ArrowRight,b,a'.split(',');
+    const p = [];
+    const f = e => {
+        p.push(e.key);
+        if (p.length > k.length) p.shift();
+        if (k.every((v, i) => v === p[i])) {
+        removeEventListener('keydown', f);
+        toast.show('Keep this between us. Shhh...', 'success', 7000);
+        }
+    };
+    addEventListener('keydown', f);
+    })();
 
     // UI管理器
     class UIManager {
@@ -395,18 +426,21 @@
             }
         }
 
-        createButton(onClick) {
+        createButton(text, onClick, isBidOrder = false) {
             const btn = document.createElement("button");
-            btn.textContent = LANG.autoBuyButton;
+            btn.textContent = text;
+
+            const bgColor = isBidOrder ? 'var(--color-market-sell)' : 'var(--color-market-buy)';
+            const hoverColor = isBidOrder ? 'var(--color-market-sell-hover)' : 'var(--color-market-buy-hover)';
 
             Object.assign(btn.style, {
-                padding: '0 10px',
-                backgroundColor: 'var(--color-primary)',
-                color: 'var(--color-text-dark-mode)',
+                padding: '0 6px',
+                backgroundColor: bgColor,
+                color: '#000',
                 border: 'none',
                 borderRadius: '4px',
                 cursor: 'pointer',
-                fontSize: '14px',
+                fontSize: '13px',
                 fontWeight: '600',
                 transition: 'all 0.2s ease',
                 fontFamily: '"Roboto"',
@@ -415,15 +449,16 @@
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                height: '36px',
-                lineHeight: '15px',
+                height: '24px',
+                lineHeight: '14px',
                 minWidth: 'auto',
-                overflow: 'hidden'
+                overflow: 'hidden',
+                width: '100%'
             });
 
             ['mouseenter', 'mouseleave'].forEach((event, index) => {
                 btn.addEventListener(event, () => {
-                    btn.style.backgroundColor = index ? 'var(--color-primary)' : 'var(--color-primary-hover)';
+                    btn.style.backgroundColor = index ? bgColor : hoverColor;
                 });
             });
 
@@ -434,7 +469,7 @@
                 }
 
                 btn.disabled = true;
-                btn.textContent = LANG.autoBuyButtonActive;
+                btn.textContent = isBidOrder ? LANG.bidOrderButtonActive : LANG.directBuyButtonActive;
                 Object.assign(btn.style, {
                     backgroundColor: "var(--color-disabled)",
                     cursor: "not-allowed"
@@ -446,9 +481,9 @@
                     this.toast.show(\`\${LANG.purchaseError}: \${error.message}\`, 'error');
                 } finally {
                     btn.disabled = false;
-                    btn.textContent = LANG.autoBuyButton;
+                    btn.textContent = text;
                     Object.assign(btn.style, {
-                        backgroundColor: "var(--color-primary)",
+                        backgroundColor: bgColor,
                         cursor: "pointer"
                     });
                 }
@@ -477,7 +512,6 @@
             const className = type === 'production' ? 'material-info-span' : 'house-material-info-span';
             const upgradeClassName = 'upgrade-info-span';
             
-            // 更新普通材料的信息显示
             const materialSpans = document.querySelectorAll(\`.\${className}\`);
             const materialRequirements = requirements.filter(req => req.type === 'material');
             
@@ -489,7 +523,6 @@
                 }
             });
 
-            // 更新升级物品的信息显示
             const upgradeSpan = document.querySelector(\`.\${upgradeClassName}\`);
             const upgradeRequirement = requirements.find(req => req.type === 'upgrade');
             
@@ -499,14 +532,13 @@
                     upgradeSpan.textContent = \`\${LANG.missingPrefix}\${needed}\`;
                     upgradeSpan.style.color = needed > 0 ? '#ff6b6b' : 'var(--color-text-dark-mode)';
                 } else {
-                    // 如果没有升级需求，显示0并设置正常颜色
                     upgradeSpan.textContent = \`\${LANG.missingPrefix}0\`;
                     upgradeSpan.style.color = 'var(--color-text-dark-mode)';
                 }
             }
         }
 
-        async purchaseFlow(type) {
+        async purchaseFlow(type, isBidOrder = false) {
             if (!this.loggerReady) {
                 this.toast.show(LANG.wsNotAvailable, 'error');
                 return;
@@ -514,9 +546,7 @@
 
             const requirements = await MaterialCalculator.calculateRequirements(type);
             
-            // 修复购买逻辑：包含所有需要的物品，无论是否选择
             const needToBuy = requirements.filter(item => {
-                // 基本条件检查
                 const isValidItem = item.itemId && 
                                    item.itemId !== 'coin' && 
                                    item.itemId !== '/items/coin' && 
@@ -535,11 +565,14 @@
                 \`\${item.materialName}: \${item.supplementNeeded}\${LANG.each}\`
             ).join(', ');
 
-            this.toast.show(\`\${LANG.startPurchasing} \${needToBuy.length} \${LANG.materials}: \${itemList}\`, 'info');
+            const startMessage = isBidOrder ? 
+                \`\${LANG.startBidOrdering} \${needToBuy.length} \${LANG.materials}: \${itemList} \` :
+                \`\${LANG.startDirectPurchasing} \${needToBuy.length} \${LANG.materials}: \${itemList}\`;
+
+            this.toast.show(startMessage, 'info');
 
             try {
                 const purchaseItems = needToBuy.map(item => {
-                    // 确保itemId格式正确
                     let itemHrid = item.itemId;
                     if (!itemHrid.startsWith('/items/')) {
                         itemHrid = \`/items/\${itemHrid}\`;
@@ -552,7 +585,9 @@
                     };
                 });
 
-                const results = await this.postMessageAPI.batchPurchase(purchaseItems, 800);
+                const results = isBidOrder ? 
+                    await this.postMessageAPI.batchBidOrder(purchaseItems, 800) :
+                    await this.postMessageAPI.batchDirectPurchase(purchaseItems, 800);
 
                 let successCount = 0;
                 let totalCost = 0;
@@ -563,27 +598,32 @@
                         const cost = result.priceAnalysis?.totalCost || 0;
                         totalCost += cost;
 
+                        const successMessage = isBidOrder ? LANG.orderSubmitted : LANG.purchased;
                         this.toast.show(
-                            \`\${LANG.purchased} \${result.item.materialName || result.item.itemHrid} x\${result.item.quantity} (\${cost}\${LANG.coins})\`,
+                            \`\${successMessage} \${result.item.materialName || result.item.itemHrid} x\${result.item.quantity} (\${cost}\${LANG.coins})\`,
                             'success'
                         );
                     } else {
+                        const errorMessage = isBidOrder ? LANG.orderFailed : LANG.purchaseFailed;
                         this.toast.show(
-                            \`\${LANG.purchaseFailed} \${result.item.materialName || result.item.itemHrid}: \${result.error}\`,
+                            \`\${errorMessage} \${result.item.materialName || result.item.itemHrid}: \${result.error}\`,
                             'error'
                         );
                     }
                 });
 
                 if (successCount > 0) {
+                    const completeMessage = isBidOrder ? LANG.orderComplete : LANG.purchaseComplete;
+                    const successType = isBidOrder ? LANG.orderSuccess : LANG.purchaseSuccess;
                     this.toast.show(
-                        \`\${LANG.purchaseComplete} \${LANG.purchaseSuccess} \${successCount}/\${needToBuy.length} \${LANG.materials}，\${LANG.totalCost} \${totalCost} \${LANG.coins}\`,
+                        \`\${completeMessage} \${successType} \${successCount}/\${needToBuy.length} \${LANG.materials}，\${LANG.totalCost} \${totalCost} \${LANG.coins}\`,
                         'success',
                         5000
                     );
                     setTimeout(() => this.updateInfoSpans(type), 2000);
                 } else {
-                    this.toast.show(LANG.allPurchasesFailed, 'error');
+                    const allFailedMessage = isBidOrder ? LANG.allOrdersFailed : LANG.allPurchasesFailed;
+                    this.toast.show(allFailedMessage, 'error');
                 }
 
             } catch (error) {
@@ -607,7 +647,6 @@
                 }
             });
 
-            // 监听升级物品选择变化
             document.addEventListener('click', (e) => {
                 if (e.target.closest('.ItemSelector_itemSelector__2eTV6')) {
                     setTimeout(() => this.updateInfoSpans('production'), 100);
@@ -630,7 +669,7 @@
                     className: 'house-material-info-span',
                     gridCols: 'auto auto auto 120px',
                     buttonParent: 'headerDiv',
-                    buttonStyle: { marginBottom: '10px', display: 'block', width: 'fit-content' }
+                    buttonStyle: { flex: '1' }
                 }
             };
 
@@ -648,7 +687,7 @@
 
                 panel.dataset[dataAttr] = "true";
 
-                // 设置普通材料的UI
+                // 设置普通材料UI
                 if (!requirements.dataset[modifiedAttr]) {
                     requirements.dataset[modifiedAttr] = "true";
                     requirements.style.gridTemplateColumns = conf.gridCols;
@@ -661,18 +700,15 @@
                     });
                 }
 
-                // 为升级物品添加UI（仅针对production类型）
+                // 设置升级物品UI（仅production类型）
                 if (type === 'production') {
                     const upgradeContainer = panel.querySelector(selectors.upgradeSelector);
                     if (upgradeContainer && !upgradeContainer.dataset.upgradeModified) {
                         upgradeContainer.dataset.upgradeModified = "true";
                         
-                        // 检查是否已经存在升级span
                         if (!upgradeContainer.querySelector('.upgrade-info-span')) {
                             const upgradeSpan = this.createInfoSpan();
                             upgradeSpan.className = 'upgrade-info-span';
-                            
-                            // 直接添加到upgradeContainer的末尾
                             upgradeContainer.appendChild(upgradeSpan);
                         }
                     }
@@ -680,16 +716,37 @@
 
                 setTimeout(() => this.updateInfoSpans(type), 100);
 
-                // 添加自动购买按钮
+                // 添加购买按钮
                 const parentDiv = panel.querySelector(selectors[conf.buttonParent]);
-                if (parentDiv && !parentDiv.parentNode.querySelector('button[textContent*="🛒"]')) {
-                    const btn = this.createButton(() => this.purchaseFlow(type));
-                    Object.assign(btn.style, conf.buttonStyle);
+                if (parentDiv && !parentDiv.parentNode.querySelector('.buy-buttons-container')) {
+                    const buttonContainer = document.createElement('div');
+                    buttonContainer.className = 'buy-buttons-container';
+                    buttonContainer.style.display = 'flex';
+                    buttonContainer.style.gap = '8px';
+                    buttonContainer.style.justifyContent = 'center';
+                    buttonContainer.style.alignItems = 'center';
+                    
+                    if (type === 'house') {
+                        buttonContainer.style.width = 'fit-content';
+                        buttonContainer.style.margin = '0 auto';
+                        buttonContainer.style.maxWidth = '280px';
+                        buttonContainer.style.minWidth = '260px';
+                    }
+
+                    const directBuyBtn = this.createButton(LANG.directBuyButton, () => this.purchaseFlow(type, false), false);
+                    const bidOrderBtn = this.createButton(LANG.bidOrderButton, () => this.purchaseFlow(type, true), true);
+
+                    Object.assign(directBuyBtn.style, { flex: '1' });
+                    Object.assign(bidOrderBtn.style, { flex: '1' });
+
+                    buttonContainer.appendChild(directBuyBtn);
+                    buttonContainer.appendChild(bidOrderBtn);
 
                     if (type === 'production') {
-                        parentDiv.parentNode.insertBefore(btn, parentDiv.nextSibling);
+                        Object.assign(buttonContainer.style, conf.buttonStyle);
+                        parentDiv.parentNode.insertBefore(buttonContainer, parentDiv.nextSibling);
                     } else {
-                        parentDiv.parentNode.insertBefore(btn, parentDiv);
+                        parentDiv.parentNode.insertBefore(buttonContainer, parentDiv);
                     }
                 }
             });
@@ -724,11 +781,17 @@
                     case 'get_market_data':
                         result = await handleGetMarketData(data);
                         break;
-                    case 'smart_purchase':
-                        result = await handleSmartPurchase(data);
+                    case 'direct_purchase':
+                        result = await handleDirectPurchase(data);
                         break;
-                    case 'batch_purchase':
-                        result = await handleBatchPurchase(data);
+                    case 'batch_direct_purchase':
+                        result = await handleBatchDirectPurchase(data);
+                        break;
+                    case 'bid_order':
+                        result = await handleBidOrder(data);
+                        break;
+                    case 'batch_bid_order':
+                        result = await handleBatchBidOrder(data);
                         break;
                     default:
                         throw new Error(`未知的操作: ${action}`);
@@ -803,20 +866,28 @@
             });
         }
 
-        // 智能购买处理
-        async function handleSmartPurchase({ itemHrid, quantity }) {
+        // 直接购买处理
+        async function handleDirectPurchase({ itemHrid, quantity }) {
             const marketData = await handleGetMarketData({ itemHrid });
             const priceAnalysis = analyzeMarketPrice(marketData, quantity);
-            const result = await executePurchase(itemHrid, quantity, priceAnalysis.maxPrice);
+            const result = await executeDirectPurchase(itemHrid, quantity, priceAnalysis.maxPrice);
             return { success: true, result, priceAnalysis };
         }
 
-        // 批量购买处理
-        async function handleBatchPurchase({ items, delayBetween = 800 }) {
+        // 求购订单处理
+        async function handleBidOrder({ itemHrid, quantity }) {
+            const marketData = await handleGetMarketData({ itemHrid });
+            const priceAnalysis = analyzeBidPrice(marketData, quantity);
+            const result = await executeBidOrder(itemHrid, quantity, priceAnalysis.maxPrice);
+            return { success: true, result, priceAnalysis };
+        }
+
+        // 批量处理函数
+        async function handleBatchDirectPurchase({ items, delayBetween = 800 }) {
             const results = [];
             for (let i = 0; i < items.length; i++) {
                 try {
-                    const result = await handleSmartPurchase(items[i]);
+                    const result = await handleDirectPurchase(items[i]);
                     results.push({ item: items[i], ...result });
                 } catch (error) {
                     results.push({ item: items[i], success: false, error: error.message });
@@ -828,8 +899,24 @@
             return results;
         }
 
-        // 执行购买
-        async function executePurchase(itemHrid, quantity, price, enhancementLevel = 0) {
+        async function handleBatchBidOrder({ items, delayBetween = 800 }) {
+            const results = [];
+            for (let i = 0; i < items.length; i++) {
+                try {
+                    const result = await handleBidOrder(items[i]);
+                    results.push({ item: items[i], ...result });
+                } catch (error) {
+                    results.push({ item: items[i], success: false, error: error.message });
+                }
+                if (i < items.length - 1 && delayBetween > 0) {
+                    await new Promise(resolve => setTimeout(resolve, delayBetween));
+                }
+            }
+            return results;
+        }
+
+        // 执行购买操作
+        async function executeDirectPurchase(itemHrid, quantity, price, enhancementLevel = 0) {
             const fullItemHrid = itemHrid.startsWith('/items/') ? itemHrid : `/items/${itemHrid}`;
 
             return new Promise((resolve, reject) => {
@@ -872,7 +959,32 @@
             });
         }
 
-        // 市场价格分析
+        async function executeBidOrder(itemHrid, quantity, price, enhancementLevel = 0) {
+            const fullItemHrid = itemHrid.startsWith('/items/') ? itemHrid : `/items/${itemHrid}`;
+
+            return new Promise((resolve, reject) => {
+                if (!window.currentWS || window.currentWS.readyState !== WebSocket.OPEN) {
+                    reject(new Error('WebSocket连接不可用'));
+                    return;
+                }
+
+                window.currentWS.send(JSON.stringify({
+                    type: "post_market_order",
+                    postMarketOrderData: {
+                        isSell: false,
+                        itemHrid: fullItemHrid,
+                        enhancementLevel,
+                        quantity,
+                        price,
+                        isInstantOrder: false
+                    }
+                }));
+
+                resolve({ message: '订单已提交' });
+            });
+        }
+
+        // 价格分析函数
         function analyzeMarketPrice(marketData, neededQuantity) {
             const asks = marketData.orderBooks?.[0]?.asks;
             if (!asks?.length) throw new Error('没有可用的卖单');
@@ -909,6 +1021,26 @@
             };
         }
 
+        function analyzeBidPrice(marketData, neededQuantity) {
+            const bids = marketData.orderBooks?.[0]?.bids;
+            if (!bids?.length) throw new Error('没有可用的买单');
+
+            const targetPrice = bids[0].price;
+            const totalCost = neededQuantity * targetPrice;
+
+            return {
+                maxPrice: targetPrice,
+                averagePrice: targetPrice,
+                totalCost,
+                availableQuantity: neededQuantity,
+                priceBreakdown: [{
+                    price: targetPrice,
+                    quantity: neededQuantity,
+                    cost: totalCost
+                }]
+            };
+        }
+
         // 消息分发
         function dispatchMessage(data, direction) {
             window.wsMessageListeners.forEach(listener => {
@@ -921,7 +1053,7 @@
                 });
             }
 
-            // 缓存和队列处理
+            // 缓存处理
             if (data.type === 'market_item_order_books_updated') {
                 const itemHrid = data.marketItemOrderBooks?.itemHrid;
                 if (itemHrid) {
@@ -1018,6 +1150,5 @@
         });
     }
 
-    // 初始化
     setupWebSocketAndAPI();
 })();
