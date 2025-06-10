@@ -3,7 +3,7 @@
 // @name:zh-CN   [银河奶牛]自动计算购买材料
 // @name:en      MWI-AutoBuyer
 // @namespace    http://tampermonkey.net/
-// @version      2.0.4
+// @version      2.1.0
 // @description  自动计算制造、烹饪、房屋等所需材料，一键购买缺少的材料(Automatically calculate the required material quantities and purchase needed materials with one click.)
 // @description:en  Automatically calculate the required material quantities and purchase needed materials with one click.
 // @author       XIxixi297
