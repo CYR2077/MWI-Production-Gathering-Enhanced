@@ -1,5 +1,6 @@
 // ==UserScript==
 // @name         银河奶牛-自动计算购买材料
+// @name:zh-CN   银河奶牛-自动计算购买材料
 // @name:en      MWI-AutoBuyer
 // @namespace    http://tampermonkey.net/
 // @version      2.0.1
