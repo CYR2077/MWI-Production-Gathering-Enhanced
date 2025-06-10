@@ -3,7 +3,7 @@
 // @name:zh-CN   [银河奶牛]自动计算购买材料
 // @name:en      MWI-AutoBuyer
 // @namespace    http://tampermonkey.net/
-// @version      2.0.2
+// @version      2.0.4
 // @description  自动计算制造、烹饪、房屋等所需材料，一键购买缺少的材料(Automatically calculate the required material quantities and purchase needed materials with one click.)
 // @description:en  Automatically calculate the required material quantities and purchase needed materials with one click.
 // @author       XIxixi297
@@ -74,6 +74,7 @@
             container: '.SkillActionDetail_regularComponent__3oCgr',
             input: '.Input_input__2-t98',
             requirements: '.SkillActionDetail_itemRequirements__3SPnA',
+            upgradeSelector: '.SkillActionDetail_upgradeItemSelectorInput__2mnS0',
             nameDiv: '.SkillActionDetail_name__3erHV',
             inventoryCount: '.SkillActionDetail_inventoryCount__tHmPD',
             inputCount: '.SkillActionDetail_inputCount__1rdrn'
@@ -112,7 +113,7 @@
 
     function parseNumber(text) {
         if (!text) return 0;
-        const match = text.match(/^([\\d,]+(?:\\.\\d+)?)\\s*([KMB])\$/i);
+        const match = text.match(/^([\\d,]+(?:\\.\\d+)?)\\s*([KMB])$/i);
         if (!match) return parseInt(text.replace(/[^\\d]/g, ''), 10) || 0;
 
         let num = parseFloat(match[1].replace(/,/g, ''));
@@ -123,7 +124,7 @@
     function extractItemId(svgElement) {
         const useElement = svgElement?.querySelector('use');
         const href = useElement?.getAttribute('href');
-        const match = href?.match(/#(.+)\$/);
+        const match = href?.match(/#(.+)$/);
         return match ? match[1] : null;
     }
 
@@ -247,45 +248,111 @@
                 productionQuantity = parseInt(input?.value) || 0;
             }
 
+            // 计算普通材料需求
             const requirementsContainer = container.querySelector(selectors.requirements);
-            if (!requirementsContainer) return [];
+            if (requirementsContainer) {
+                const materialContainers = requirementsContainer.querySelectorAll('.Item_itemContainer__x7kH1');
+                const inventoryCounts = requirementsContainer.querySelectorAll(selectors.inventoryCount);
+                const inputCounts = requirementsContainer.querySelectorAll(selectors.inputCount);
 
-            const materialContainers = requirementsContainer.querySelectorAll('.Item_itemContainer__x7kH1');
-            const inventoryCounts = requirementsContainer.querySelectorAll(selectors.inventoryCount);
-            const inputCounts = requirementsContainer.querySelectorAll(selectors.inputCount);
+                for (let i = 0; i < materialContainers.length; i++) {
+                    const nameElement = materialContainers[i].querySelector('.Item_name__2C42x');
+                    const svgElement = materialContainers[i].querySelector('svg[aria-label]');
 
-            for (let i = 0; i < materialContainers.length; i++) {
-                const nameElement = materialContainers[i].querySelector('.Item_name__2C42x');
-                const svgElement = materialContainers[i].querySelector('svg[aria-label]');
+                    if (!nameElement || !svgElement) continue;
 
-                if (!nameElement || !svgElement) continue;
+                    const materialName = nameElement.textContent.trim();
+                    const itemId = extractItemId(svgElement);
+                    const currentStock = getCountById(itemId);
 
-                const materialName = nameElement.textContent.trim();
-                const itemId = extractItemId(svgElement);
-                const currentStock = getCountById(itemId);
-
-                let totalNeeded = 0;
-                if (type === 'production') {
-                    const consumptionMatch = inputCounts[i]?.textContent.match(/\\d+\\.?\\d*/);
-                    const consumptionPerUnit = consumptionMatch ? parseFloat(consumptionMatch[0]) : 0;
-                    totalNeeded = Math.ceil(productionQuantity * consumptionPerUnit);
-                } else {
-                    const neededMatch = inputCounts[i]?.textContent.match(/\\/\\s*([\\d,]+(?:\\.\\d+)?[KMB]?)\\s*/);
-                    if (neededMatch) {
-                        totalNeeded = parseNumber(neededMatch[1]);
+                    let totalNeeded = 0;
+                    if (type === 'production') {
+                        const consumptionMatch = inputCounts[i]?.textContent.match(/\\d+\\.?\\d*/);
+                        const consumptionPerUnit = consumptionMatch ? parseFloat(consumptionMatch[0]) : 0;
+                        totalNeeded = Math.ceil(productionQuantity * consumptionPerUnit);
+                    } else {
+                        const neededMatch = inputCounts[i]?.textContent.match(/\\/\\s*([\\d,]+(?:\\.\\d+)?[KMB]?)\\s*/);
+                        if (neededMatch) {
+                            totalNeeded = parseNumber(neededMatch[1]);
+                        }
                     }
+
+                    const supplementNeeded = Math.max(0, totalNeeded - currentStock);
+
+                    requirements.push({
+                        materialName,
+                        itemId,
+                        supplementNeeded,
+                        totalNeeded,
+                        currentStock,
+                        index: i,
+                        type: 'material'
+                    });
                 }
+            }
 
-                const supplementNeeded = Math.max(0, totalNeeded - currentStock);
+            // 计算升级物品需求（仅针对production类型）
+            if (type === 'production') {
+                const upgradeContainer = container.querySelector(selectors.upgradeSelector);
+                if (upgradeContainer) {
+                    const upgradeItem = upgradeContainer.querySelector('.Item_item__2De2O');
+                    
+                    // 无论是否选择了升级物品，都要计算升级需求
+                    let materialName = '升级物品';
+                    let itemId = null;
+                    let currentStock = 0;
+                    
+                    // 升级物品的需求数量总是等于生产数量
+                    const totalNeeded = productionQuantity;
+                    
+                    if (upgradeItem) {
+                        // 获取升级物品信息，无论是否选择
+                        const svgElement = upgradeItem.querySelector('svg[aria-label]');
+                        if (svgElement) {
+                            // 升级物品的名称存储在svg的aria-label属性中
+                            const itemName = svgElement.getAttribute('aria-label');
+                            const extractedId = extractItemId(svgElement);
+                            
+                            if (itemName && extractedId) {
+                                materialName = itemName;
+                                itemId = extractedId;
+                                currentStock = getCountById(itemId);
+                            }
+                        }
+                        
+                        // 额外检查：尝试从React props获取升级物品信息
+                        if (!itemId) {
+                            try {
+                                const reactKey = Object.keys(upgradeItem).find(key => key.startsWith('__reactProps'));
+                                if (reactKey && upgradeItem[reactKey]) {
+                                    const reactProps = upgradeItem[reactKey];
+                                    if (reactProps.children && reactProps.children[0] && reactProps.children[0][1]) {
+                                        const ownerProps = reactProps.children[0][1]._owner?.memoizedProps;
+                                        if (ownerProps && ownerProps.itemHrid && ownerProps.itemHrid !== '/items/empty') {
+                                            itemId = ownerProps.itemHrid.replace('/items/', '');
+                                            materialName = ownerProps.name || itemId;
+                                            currentStock = getCountById(itemId);
+                                        }
+                                    }
+                                }
+                            } catch (e) {
+                                console.warn('[调试] 无法从React props获取升级物品信息:', e);
+                            }
+                        }
+                    }
+                    
+                    const supplementNeeded = itemId ? Math.max(0, totalNeeded - currentStock) : 0;
 
-                requirements.push({
-                    materialName,
-                    itemId,
-                    supplementNeeded,
-                    totalNeeded,
-                    currentStock,
-                    index: i
-                });
+                    requirements.push({
+                        materialName,
+                        itemId,
+                        supplementNeeded,
+                        totalNeeded,
+                        currentStock,
+                        index: 0,
+                        type: 'upgrade'
+                    });
+                }
             }
 
             return requirements;
@@ -408,15 +475,35 @@
         async updateInfoSpans(type) {
             const requirements = await MaterialCalculator.calculateRequirements(type);
             const className = type === 'production' ? 'material-info-span' : 'house-material-info-span';
-            const spans = document.querySelectorAll(\`.\${className}\`);
-
-            spans.forEach((span, index) => {
-                if (requirements[index]) {
-                    const needed = requirements[index].supplementNeeded;
+            const upgradeClassName = 'upgrade-info-span';
+            
+            // 更新普通材料的信息显示
+            const materialSpans = document.querySelectorAll(\`.\${className}\`);
+            const materialRequirements = requirements.filter(req => req.type === 'material');
+            
+            materialSpans.forEach((span, index) => {
+                if (materialRequirements[index]) {
+                    const needed = materialRequirements[index].supplementNeeded;
                     span.textContent = \`\${LANG.missingPrefix}\${needed}\`;
                     span.style.color = needed > 0 ? '#ff6b6b' : 'var(--color-text-dark-mode)';
                 }
             });
+
+            // 更新升级物品的信息显示
+            const upgradeSpan = document.querySelector(\`.\${upgradeClassName}\`);
+            const upgradeRequirement = requirements.find(req => req.type === 'upgrade');
+            
+            if (upgradeSpan) {
+                if (upgradeRequirement) {
+                    const needed = upgradeRequirement.supplementNeeded;
+                    upgradeSpan.textContent = \`\${LANG.missingPrefix}\${needed}\`;
+                    upgradeSpan.style.color = needed > 0 ? '#ff6b6b' : 'var(--color-text-dark-mode)';
+                } else {
+                    // 如果没有升级需求，显示0并设置正常颜色
+                    upgradeSpan.textContent = \`\${LANG.missingPrefix}0\`;
+                    upgradeSpan.style.color = 'var(--color-text-dark-mode)';
+                }
+            }
         }
 
         async purchaseFlow(type) {
@@ -426,12 +513,18 @@
             }
 
             const requirements = await MaterialCalculator.calculateRequirements(type);
-            const needToBuy = requirements.filter(item =>
-                item.itemId !== 'coin' &&
-                item.itemId !== '/items/coin' &&
-                item.supplementNeeded > 0 &&
-                item.itemId
-            );
+            
+            // 修复购买逻辑：包含所有需要的物品，无论是否选择
+            const needToBuy = requirements.filter(item => {
+                // 基本条件检查
+                const isValidItem = item.itemId && 
+                                   item.itemId !== 'coin' && 
+                                   item.itemId !== '/items/coin' && 
+                                   item.supplementNeeded > 0;
+                
+                if (!isValidItem) return false;
+                return true;
+            });
 
             if (needToBuy.length === 0) {
                 this.toast.show(LANG.noMaterialsNeeded, 'info');
@@ -445,11 +538,19 @@
             this.toast.show(\`\${LANG.startPurchasing} \${needToBuy.length} \${LANG.materials}: \${itemList}\`, 'info');
 
             try {
-                const purchaseItems = needToBuy.map(item => ({
-                    itemHrid: item.itemId,
-                    quantity: item.supplementNeeded,
-                    materialName: item.materialName
-                }));
+                const purchaseItems = needToBuy.map(item => {
+                    // 确保itemId格式正确
+                    let itemHrid = item.itemId;
+                    if (!itemHrid.startsWith('/items/')) {
+                        itemHrid = \`/items/\${itemHrid}\`;
+                    }
+                    
+                    return {
+                        itemHrid: itemHrid,
+                        quantity: item.supplementNeeded,
+                        materialName: item.materialName
+                    };
+                });
 
                 const results = await this.postMessageAPI.batchPurchase(purchaseItems, 800);
 
@@ -506,6 +607,13 @@
                 }
             });
 
+            // 监听升级物品选择变化
+            document.addEventListener('click', (e) => {
+                if (e.target.closest('.ItemSelector_itemSelector__2eTV6')) {
+                    setTimeout(() => this.updateInfoSpans('production'), 100);
+                }
+            });
+
             this.setupUI('production');
             this.setupUI('house');
         }
@@ -540,6 +648,7 @@
 
                 panel.dataset[dataAttr] = "true";
 
+                // 设置普通材料的UI
                 if (!requirements.dataset[modifiedAttr]) {
                     requirements.dataset[modifiedAttr] = "true";
                     requirements.style.gridTemplateColumns = conf.gridCols;
@@ -550,10 +659,28 @@
                         span.className = conf.className;
                         item.parentNode.insertBefore(span, item.nextSibling);
                     });
-
-                    setTimeout(() => this.updateInfoSpans(type), 100);
                 }
 
+                // 为升级物品添加UI（仅针对production类型）
+                if (type === 'production') {
+                    const upgradeContainer = panel.querySelector(selectors.upgradeSelector);
+                    if (upgradeContainer && !upgradeContainer.dataset.upgradeModified) {
+                        upgradeContainer.dataset.upgradeModified = "true";
+                        
+                        // 检查是否已经存在升级span
+                        if (!upgradeContainer.querySelector('.upgrade-info-span')) {
+                            const upgradeSpan = this.createInfoSpan();
+                            upgradeSpan.className = 'upgrade-info-span';
+                            
+                            // 直接添加到upgradeContainer的末尾
+                            upgradeContainer.appendChild(upgradeSpan);
+                        }
+                    }
+                }
+
+                setTimeout(() => this.updateInfoSpans(type), 100);
+
+                // 添加自动购买按钮
                 const parentDiv = panel.querySelector(selectors[conf.buttonParent]);
                 if (parentDiv && !parentDiv.parentNode.querySelector('button[textContent*="🛒"]')) {
                     const btn = this.createButton(() => this.purchaseFlow(type));
