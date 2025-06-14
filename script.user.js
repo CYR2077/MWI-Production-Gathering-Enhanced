@@ -3,7 +3,7 @@
 // @name:zh-CN   [银河奶牛]自动计算购买材料
 // @name:en      MWI-AutoBuyer
 // @namespace    http://tampermonkey.net/
-// @version      2.3.0
+// @version      2.3.1
 // @description  自动计算制造、烹饪、强化、房屋等所需材料，一键购买缺少的材料
 // @description:en  Automatically calculate the required material quantities and purchase needed materials with one click.
 // @author       XIxixi297
@@ -582,24 +582,99 @@
     })();
     `;
 
-    // WebSocket 和 API 设置（精简版）
-    function setupWebSocketAndAPI() {
-        const state = {
-            wsInstances: [],
-            currentWS: null,
-            messageListeners: new Set(),
-            requestHandlers: new Map(),
-            marketDataCache: new Map(),
-            gameCore: null
-        };
+    // 初始化状态
+    const state = {
+        wsInstances: [],
+        currentWS: null,
+        requestHandlers: new Map(),
+        marketDataCache: new Map()
+    };
 
-        Object.assign(window, state);
+    Object.assign(window, state);
 
-        setupWebSocketInterception();
-        setupAPI();
-        setupGameCoreMonitor();
-    }
+    // AutoBuyAPI 核心对象
+    window.AutoBuyAPI = {
+        core: null,
 
+        async checkAPI() {
+            return {
+                available: true,
+                core_ready: !!this.core,
+                ws_ready: !!window.currentWS
+            };
+        },
+
+        async batchDirectPurchase(items, delayBetween = 800) {
+            return processItems(items, delayBetween, directPurchase);
+        },
+
+        async batchBidOrder(items, delayBetween = 800) {
+            return processItems(items, delayBetween, bidOrder);
+        },
+
+        hookMessage(messageType, callback, filter = null) {
+            if (typeof messageType !== 'string' || !messageType) {
+                throw new Error('messageType 必须是非空字符串');
+            }
+            
+            if (typeof callback !== 'function') {
+                throw new Error('callback 必须是函数');
+            }
+
+            const wrappedHandler = (responseData) => {
+                try {
+                    if (filter && !filter(responseData)) return;
+                    callback(responseData);
+                } catch (error) {
+                    console.error(`[AutoBuyAPI.hookMessage] 处理消息时出错:`, error);
+                }
+            };
+
+            registerHandler(messageType, wrappedHandler);
+
+            return function unhook() {
+                unregisterHandler(messageType, wrappedHandler);
+            };
+        },
+
+        waitForMessage(messageType, timeout = 10000, filter = null) {
+            return new Promise((resolve, reject) => {
+                const timeoutId = setTimeout(() => {
+                    unhook();
+                    reject(new Error(`等待消息类型 '${messageType}' 超时 (${timeout}ms)`));
+                }, timeout);
+
+                const unhook = this.hookMessage(messageType, (responseData) => {
+                    clearTimeout(timeoutId);
+                    unhook();
+                    resolve(responseData);
+                }, filter);
+            });
+        },
+
+        getHookStats() {
+            const stats = {};
+            let totalHooks = 0;
+            
+            for (const [messageType, handlers] of window.requestHandlers.entries()) {
+                stats[messageType] = handlers.size;
+                totalHooks += handlers.size;
+            }
+            
+            return { totalHooks, byMessageType: stats };
+        },
+
+        clearHooks(messageType) {
+            const handlers = window.requestHandlers.get(messageType);
+            if (!handlers) return 0;
+            
+            const count = handlers.size;
+            window.requestHandlers.delete(messageType);
+            return count;
+        }
+    };
+
+    // WebSocket 拦截设置
     function setupWebSocketInterception() {
         const OriginalWebSocket = window.WebSocket;
         window.WebSocket = new Proxy(OriginalWebSocket, {
@@ -611,18 +686,18 @@
                 // 消息拦截
                 const originalSend = ws.send;
                 ws.send = function (data) {
-                    try { dispatchMessage(JSON.parse(data), 'send'); } catch {}
+                    try { dispatchMessage(JSON.parse(data), 'send'); } catch { }
                     return originalSend.call(this, data);
                 };
 
                 ws.addEventListener("message", (event) => {
-                    try { dispatchMessage(JSON.parse(event.data), 'receive'); } catch {}
+                    try { dispatchMessage(JSON.parse(event.data), 'receive'); } catch { }
                 });
 
                 ws.addEventListener("open", () => {
                     console.log('[调试] WebSocket连接已建立');
                     setTimeout(() => initGameCore(), 500);
-                    
+
                     if (window.wsInstances.length === 1 && !scriptInjected) {
                         setTimeout(injectLocalScript, 1000);
                     }
@@ -641,33 +716,14 @@
         });
     }
 
-    function setupAPI() {
-        window.AutoBuyAPI = {
-            async checkAPI() {
-                return {
-                    available: true,
-                    core_ready: !!window.gameCore,
-                    ws_ready: !!window.currentWS
-                };
-            },
-
-            async batchDirectPurchase(items, delayBetween = 800) {
-                return processItems(items, delayBetween, directPurchase);
-            },
-
-            async batchBidOrder(items, delayBetween = 800) {
-                return processItems(items, delayBetween, bidOrder);
-            }
-        };
-    }
-
+    // 获取游戏核心对象
     function getGameCore() {
         const el = document.querySelector(".GamePage_gamePage__ixiPl");
         if (!el) return null;
-        
+
         const k = Object.keys(el).find(k => k.startsWith("__reactFiber$"));
         if (!k) return null;
-        
+
         let f = el[k];
         while (f) {
             if (f.stateNode?.sendPing) return f.stateNode;
@@ -676,55 +732,40 @@
         return null;
     }
 
+    // 初始化游戏核心
     function initGameCore() {
-        if (window.gameCore) return true;
-        
+        if (window.AutoBuyAPI.core) return true;
+
         const core = getGameCore();
         if (core) {
-            window.gameCore = core;
+            window.AutoBuyAPI.core = core;
             console.info('%c[MWI-AutoBuyer] 游戏核心对象已获取', 'color: #4CAF50; font-weight: bold;');
             return true;
         }
         return false;
     }
 
-    function setupGameCoreMonitor() {
-        const interval = setInterval(() => {
-            if (window.gameCore || initGameCore()) {
-                clearInterval(interval);
-            }
-        }, 2000);
-    }
-
     // 消息处理
     function dispatchMessage(data, direction) {
-        window.messageListeners.forEach(listener => {
-            try { listener(data, direction); } catch {}
-        });
-
         if (data.type && window.requestHandlers.has(data.type)) {
             window.requestHandlers.get(data.type).forEach(handler => {
-                try { handler(data); } catch {}
+                try { handler(data); } catch { }
             });
         }
 
-        handleSpecialMessages(data);
-    }
-
-    function handleSpecialMessages(data) {
         // 缓存市场数据
         if (data.type === 'market_item_order_books_updated') {
             const itemHrid = data.marketItemOrderBooks?.itemHrid;
             if (itemHrid) {
-                window.marketDataCache.set(itemHrid, { 
-                    data: data.marketItemOrderBooks, 
-                    timestamp: Date.now() 
+                window.marketDataCache.set(itemHrid, {
+                    data: data.marketItemOrderBooks,
+                    timestamp: Date.now()
                 });
             }
         }
     }
 
-    // 购买逻辑
+    // 购买处理
     async function processItems(items, delayBetween, processor) {
         const results = [];
         for (let i = 0; i < items.length; i++) {
@@ -753,95 +794,74 @@
         return await executePurchase(item.itemHrid, item.quantity, price, false);
     }
 
+    // 获取市场数据
     async function getMarketData(itemHrid) {
         const fullItemHrid = itemHrid.startsWith('/items/') ? itemHrid : `/items/${itemHrid}`;
-        
+
         // 检查缓存
         const cached = window.marketDataCache.get(fullItemHrid);
         if (cached && Date.now() - cached.timestamp < 60000) {
             return cached.data;
         }
 
-        if (!window.gameCore) {
+        if (!window.AutoBuyAPI.core) {
             throw new Error('游戏核心对象未就绪');
         }
 
-        return new Promise((resolve, reject) => {
-            const timeout = setTimeout(() => {
-                cleanup();
-                reject(new Error('获取市场数据超时'));
-            }, 8000);
+        // 等待响应
+        const responsePromise = window.AutoBuyAPI.waitForMessage(
+            'market_item_order_books_updated',
+            8000,
+            (responseData) => responseData.marketItemOrderBooks?.itemHrid === fullItemHrid
+        );
 
-            const responseHandler = (responseData) => {
-                if (responseData.type === 'market_item_order_books_updated' &&
-                    responseData.marketItemOrderBooks?.itemHrid === fullItemHrid) {
-                    clearTimeout(timeout);
-                    cleanup();
-                    resolve(responseData.marketItemOrderBooks);
-                }
-            };
+        // 发送请求
+        window.AutoBuyAPI.core.handleGetMarketItemOrderBooks(fullItemHrid);
 
-            const cleanup = () => {
-                const handlers = window.requestHandlers.get('market_item_order_books_updated');
-                if (handlers) {
-                    handlers.delete(responseHandler);
-                    if (handlers.size === 0) {
-                        window.requestHandlers.delete('market_item_order_books_updated');
-                    }
-                }
-            };
-
-            registerHandler('market_item_order_books_updated', responseHandler);
-            window.gameCore.handleGetMarketItemOrderBooks(fullItemHrid);
-        });
+        const response = await responsePromise;
+        return response.marketItemOrderBooks;
     }
 
+    // 执行购买
     async function executePurchase(itemHrid, quantity, price, isInstant) {
-        if (!window.gameCore) {
+        if (!window.AutoBuyAPI.core) {
             throw new Error('游戏核心对象未就绪');
         }
 
         const fullItemHrid = itemHrid.startsWith('/items/') ? itemHrid : `/items/${itemHrid}`;
 
         if (isInstant) {
-            return new Promise((resolve, reject) => {
-                const timeout = setTimeout(() => {
-                    cleanup();
-                    reject(new Error('购买超时'));
-                }, 15000);
+            const successPromise = window.AutoBuyAPI.waitForMessage(
+                'info',
+                15000,
+                (responseData) => responseData.message === 'infoNotification.buyOrderCompleted'
+            );
 
-                const successHandler = (responseData) => {
-                    if (responseData.type === 'info' && responseData.message === 'infoNotification.buyOrderCompleted') {
-                        clearTimeout(timeout);
-                        cleanup();
-                        resolve(responseData);
-                    }
-                };
+            const errorPromise = window.AutoBuyAPI.waitForMessage(
+                'error',
+                15000
+            );
 
-                const errorHandler = (responseData) => {
-                    if (responseData.type === 'error') {
-                        clearTimeout(timeout);
-                        cleanup();
-                        reject(new Error(responseData.message || '购买失败'));
-                    }
-                };
+            // 发送购买请求
+            window.AutoBuyAPI.core.handlePostMarketOrder(false, fullItemHrid, 0, quantity, price, true);
 
-                const cleanup = () => {
-                    unregisterHandler('info', successHandler);
-                    unregisterHandler('error', errorHandler);
-                };
-
-                registerHandler('info', successHandler);
-                registerHandler('error', errorHandler);
-
-                window.gameCore.handlePostMarketOrder(false, fullItemHrid, 0, quantity, price, true);
-            });
+            try {
+                const result = await Promise.race([
+                    successPromise,
+                    errorPromise.then(errorData => Promise.reject(new Error(errorData.message || '购买失败')))
+                ]);
+                return result;
+            } catch (error) {
+                throw error;
+            }
         } else {
-            window.gameCore.handlePostMarketOrder(false, fullItemHrid, 0, quantity, price, false);
+            // 求购订单
+            window.AutoBuyAPI.core.handlePostMarketOrder(false, fullItemHrid, 0, quantity, price, false);
             return { message: '求购订单已提交' };
         }
     }
 
+    // 消息处理器管理
     function registerHandler(type, handler) {
         if (!window.requestHandlers.has(type)) {
             window.requestHandlers.set(type, new Set());
@@ -887,6 +907,7 @@
         return bids[0].price;
     }
 
+    // 注入界面脚本
     function injectLocalScript() {
         if (scriptInjected) return Promise.resolve();
 
@@ -906,6 +927,16 @@
         });
     }
 
+    // 初始化监控
+    function setupGameCoreMonitor() {
+        const interval = setInterval(() => {
+            if (window.AutoBuyAPI.core || initGameCore()) {
+                clearInterval(interval);
+            }
+        }, 2000);
+    }
+
     // 启动
-    setupWebSocketAndAPI();
+    setupWebSocketInterception();
+    setupGameCoreMonitor();
 })();
