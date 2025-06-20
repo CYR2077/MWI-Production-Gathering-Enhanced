@@ -3,7 +3,7 @@
 // @name:zh-CN   [银河奶牛]自动计算购买材料
 // @name:en      MWI-AutoBuyer
 // @namespace    http://tampermonkey.net/
-// @version      2.3.1
+// @version      2.3.2
 // @description  自动计算制造、烹饪、强化、房屋等所需材料，一键购买缺少的材料
 // @description:en  Automatically calculate the required material quantities and purchase needed materials with one click.
 // @author       XIxixi297
@@ -42,14 +42,20 @@
 
         // 语言配置
         const LANG = (navigator.language || 'en').toLowerCase().includes('zh') ? {
-            directBuy: '直接购买(左一)', bidOrder: '求购订单(右一)', buying: '⏳ 购买中...', submitting: '📋 提交中...',
-            missing: '缺:', sufficient: '材料充足！', starting: '开始', materials: '种材料',
+            directBuy: '直够材料(左一)', bidOrder: '求购材料(右一)', 
+            directBuyUpgrade: '左一', bidOrderUpgrade: '右一',
+            buying: '⏳ 购买中...', submitting: '📋 提交中...',
+            missing: '缺:', sufficient: '材料充足！', sufficientUpgrade: '升级物品充足！',
+            starting: '开始', materials: '种材料', upgradeItems: '种升级物品',
             purchased: '已购买', submitted: '订单已提交', failed: '失败', complete: '完成！',
             error: '出错，请检查控制台', wsNotAvailable: 'WebSocket接口未可用', waiting: '等待接口就绪...',
             ready: '接口已就绪！', success: '成功', each: '个', allFailed: '全部失败'
         } : {
-            directBuy: 'Buy from WTS', bidOrder: 'New Buy Listing', buying: '⏳ Buying...', submitting: '📋 Submitting...',
-            missing: 'Need:', sufficient: 'All materials sufficient!', starting: 'Start', materials: 'materials',
+            directBuy: 'Buy Materials', bidOrder: 'Bid Materials', 
+            directBuyUpgrade: 'Buy', bidOrderUpgrade: 'Bid',
+            buying: '⏳ Buying...', submitting: '📋 Submitting...',
+            missing: 'Need:', sufficient: 'All materials sufficient!', sufficientUpgrade: 'All upgrades sufficient!',
+            starting: 'Start', materials: 'materials', upgradeItems: 'upgrade items',
             purchased: 'Purchased', submitted: 'Order submitted', failed: 'failed', complete: 'completed!',
             error: 'error, check console', wsNotAvailable: 'WebSocket interface not available', waiting: 'Waiting for interface...',
             ready: 'Interface ready!', success: 'Successfully', each: '', allFailed: 'All failed'
@@ -103,7 +109,7 @@
             },
 
             extractItemId(svgElement) {
-                return svgElement?.querySelector('use')?.getAttribute('href')?.match(/#(.+)$/)?.[1] || null;
+                return svgElement?.querySelector('use')?.getAttribute('href')?.match(/#(.+)\$/)?.[1] || null;
             },
 
             applyStyles(element, styles) {
@@ -381,7 +387,7 @@
                 }
             }
 
-            async purchaseFlow(type, isBidOrder = false) {
+            async purchaseMaterials(type, isBidOrder = false) {
                 if (!this.loggerReady) {
                     this.toast.show(LANG.wsNotAvailable, 'error');
                     return;
@@ -389,7 +395,7 @@
 
                 const requirements = await MaterialCalculator.calculateRequirements(type);
                 const needToBuy = requirements.filter(item => 
-                    item.itemId && !item.itemId.includes('coin') && item.supplementNeeded > 0
+                    item.type === 'material' && item.itemId && !item.itemId.includes('coin') && item.supplementNeeded > 0
                 );
 
                 if (needToBuy.length === 0) {
@@ -402,6 +408,46 @@
                 ).join(', ');
 
                 this.toast.show(\`\${LANG.starting} \${needToBuy.length} \${LANG.materials}: \${itemList}\`, 'info');
+
+                try {
+                    const purchaseItems = needToBuy.map(item => ({
+                        itemHrid: item.itemId.startsWith('/items/') ? item.itemId : \`/items/\${item.itemId}\`,
+                        quantity: item.supplementNeeded,
+                        materialName: item.materialName
+                    }));
+
+                    const results = isBidOrder ? 
+                        await this.api.batchBidOrder(purchaseItems, CONFIG.DELAYS.PURCHASE) :
+                        await this.api.batchDirectPurchase(purchaseItems, CONFIG.DELAYS.PURCHASE);
+
+                    this.processResults(results, isBidOrder, type);
+
+                } catch (error) {
+                    this.toast.show(\`\${LANG.error}: \${error.message}\`, 'error');
+                }
+            }
+
+            async purchaseUpgrades(type, isBidOrder = false) {
+                if (!this.loggerReady) {
+                    this.toast.show(LANG.wsNotAvailable, 'error');
+                    return;
+                }
+
+                const requirements = await MaterialCalculator.calculateRequirements(type);
+                const needToBuy = requirements.filter(item => 
+                    item.type === 'upgrade' && item.itemId && !item.itemId.includes('coin') && item.supplementNeeded > 0
+                );
+
+                if (needToBuy.length === 0) {
+                    this.toast.show(LANG.sufficientUpgrade, 'info');
+                    return;
+                }
+
+                const itemList = needToBuy.map(item => 
+                    \`\${item.materialName}: \${item.supplementNeeded}\${LANG.each}\`
+                ).join(', ');
+
+                this.toast.show(\`\${LANG.starting} \${needToBuy.length} \${LANG.upgradeItems}: \${itemList}\`, 'info');
 
                 try {
                     const purchaseItems = needToBuy.map(item => ({
@@ -543,34 +589,58 @@
             setupButtons(panel, selectors, config, type) {
                 if (panel.querySelector('.buy-buttons-container')) return;
 
-                const buttonContainer = document.createElement('div');
-                buttonContainer.className = 'buy-buttons-container';
-                
-                const baseStyles = { display: 'flex', gap: '8px', justifyContent: 'center', alignItems: 'center' };
+                // 材料购买按钮容器
+                const materialButtonContainer = document.createElement('div');
+                materialButtonContainer.className = 'buy-buttons-container';
+
+                const baseStyles = { display: 'flex', gap: '8px', justifyContent: 'center', alignItems: 'center', marginBottom: '8px' };
                 const typeStyles = {
-                    house: { width: 'fit-content', margin: '0 auto', maxWidth: '280px', minWidth: '260px' },
-                    enhancing: { width: 'fit-content', margin: '0 auto', maxWidth: '300px', minWidth: '260px' }
+                    house: { width: 'fit-content', margin: '0 auto 8px auto', maxWidth: '280px', minWidth: '260px' },
+                    enhancing: { width: 'fit-content', margin: '0 auto 8px auto', maxWidth: '300px', minWidth: '260px' }
                 };
                 
-                utils.applyStyles(buttonContainer, { ...baseStyles, ...typeStyles[type] });
+                utils.applyStyles(materialButtonContainer, { ...baseStyles, ...typeStyles[type] });
 
-                const directBuyBtn = this.createButton(LANG.directBuy, () => this.purchaseFlow(type, false), false);
-                const bidOrderBtn = this.createButton(LANG.bidOrder, () => this.purchaseFlow(type, true), true);
+                // 材料购买按钮
+                const directBuyBtn = this.createButton(LANG.directBuy, () => this.purchaseMaterials(type, false), false);
+                const bidOrderBtn = this.createButton(LANG.bidOrder, () => this.purchaseMaterials(type, true), true);
+                materialButtonContainer.append(directBuyBtn, bidOrderBtn);
 
-                buttonContainer.append(directBuyBtn, bidOrderBtn);
+                // 处理升级物品购买按钮（仅限production类型）
+                if (type === 'production') {
+                    const upgradeContainer = panel.querySelector(selectors.upgrade);
+                    if (upgradeContainer && !upgradeContainer.querySelector('.upgrade-buttons-container')) {
+                        const upgradeButtonContainer = document.createElement('div');
+                        upgradeButtonContainer.className = 'upgrade-buttons-container';
+                        utils.applyStyles(upgradeButtonContainer, { 
+                            display: 'flex', 
+                            gap: '6px', 
+                            justifyContent: 'center', 
+                            alignItems: 'center', 
+                            marginTop: '8px',
+                            width: '100%'
+                        });
+
+                        const directBuyUpgradeBtn = this.createButton(LANG.directBuyUpgrade, () => this.purchaseUpgrades(type, false), false);
+                        const bidOrderUpgradeBtn = this.createButton(LANG.bidOrderUpgrade, () => this.purchaseUpgrades(type, true), true);
+                        upgradeButtonContainer.append(directBuyUpgradeBtn, bidOrderUpgradeBtn);
+                        
+                        upgradeContainer.appendChild(upgradeButtonContainer);
+                    }
+                }
 
                 const insertionMethods = {
                     production: () => {
                         const parent = panel.querySelector(selectors[config.buttonParent]);
-                        parent.parentNode.insertBefore(buttonContainer, parent.nextSibling);
+                        parent.parentNode.insertBefore(materialButtonContainer, parent.nextSibling);
                     },
                     house: () => {
                         const parent = panel.querySelector(selectors[config.buttonParent]);
-                        parent.parentNode.insertBefore(buttonContainer, parent);
+                        parent.parentNode.insertBefore(materialButtonContainer, parent);
                     },
                     enhancing: () => {
                         const parent = panel.querySelector(selectors[config.buttonParent]);
-                        parent.parentNode.insertBefore(buttonContainer, parent);
+                        parent.parentNode.insertBefore(materialButtonContainer, parent);
                     }
                 };
 
