@@ -15,8 +15,8 @@
 *Precisely calculates and lists all missing materials with real-time updates for crafting, cooking, enhancing, and housing.*
 
 ### 🛒 一键购买 / One-Click Purchase
-- **左一购买**：直接从市场最低价购买所需材料
-- **右一求购**：按最高出价提交求购订单
+- **左一购买**：直接从市场购买
+- **右一求购**：按最高求购出价提交求购订单
 - **批量处理**：自动处理多种材料的购买流程
 
 *Supports both instant purchase at lowest ask price and bid orders at highest bid price with batch processing.*
