@@ -39,7 +39,7 @@
 
 ## 🔧 安装说明 / Installation
 
-### 安装地址:[https://greasyfork.org/zh-CN/scripts/538797-mwi-autobuyer](https://greasyfork.org/zh-CN/scripts/538797-mwi-autobuyer)
+### 安装地址:[https://greasyfork.org/zh-CN/scripts/538797](https://greasyfork.org/zh-CN/scripts/538797)
 
 1. 安装 <span style="color: #9C27B0;">**Tampermonkey**</span> 或类似的用户脚本管理器
 2. 安装此脚本
