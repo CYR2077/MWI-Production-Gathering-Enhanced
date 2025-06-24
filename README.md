@@ -1,24 +1,39 @@
-* * *
+#  [银河奶牛] 生产采集增强 / MWI Production & Gathering Enhanced
 
-# 📜 插件使用说明 / Plugin Usage Disclaimer
+计算制造、烹饪、强化、房屋所需材料并一键购买，计算实时炼金利润，增加按照目标材料数量进行采集的功能。
 
+*Calculate materials for crafting, cooking, enhancing, housing with one-click purchase, calculate real-time alchemy profits, add target-based gathering functionality.*
 
-觉得手动计算和购买各种材料很麻烦？  
-TRY THIS！
+---
 
-✨ ​**​精准计算​**​：  
-自动扫描并列出你当前缺少的所有材料数量。告别手动清点库存的日子！
+## ✨ 主要功能 / Key Features
 
-🛒 ​**​一键补货​**​：  
-检测到缺口后，只需点击一次按钮，脚本会自动从市场购买全部所需材料。再也不用反复进出市场、逐个查找补货了！
+### 🧮 材料自动计算 / Auto Material Calculation
+- **自动计算**：自动计算并列出你当前缺少的所有材料数量
+- **多种场景**：支持制造、烹饪、强化、房屋等材料计算
 
-* * *
+*Precisely calculates and lists all missing materials with real-time updates for crafting, cooking, enhancing, and housing.*
 
+### 🛒 一键购买 / One-Click Purchase
+- **左一购买**：直接从市场最低价购买所需材料
+- **右一求购**：按最高出价提交求购订单
+- **批量处理**：自动处理多种材料的购买流程
 
-|||
-|---------|---------|
-| ![Chinese Screenshot 1](img/1.png) | ![English Screenshot 1](img/3.png) |
-| ![Chinese Screenshot 2](img/2.png) | ![English Screenshot 2](img/4.png) |
+*Supports both instant purchase at lowest ask price and bid orders at highest bid price with batch processing.*
+
+### 📊 炼金利润分析 / Alchemy Profit Analysis
+- **实时计算**：根据当前市场价格实时计算炼金收益
+- **双重模式**：
+  - **悲观日利润**：基于左买右卖的保守估算
+  - **乐观日利润**：基于右买左卖的激进估算
+- **全面考虑**：纳入buff效果、饮料加成、装备属性、催化剂效果等
+
+*Real-time alchemy profit calculation with pessimistic and optimistic modes, considering all buffs, consumables, equipment, and catalyst effects.*
+
+### 🎯 采集增强 / Gathering Enhanced
+- **按目标数量采集**：完成设定目标数量后自动停止
+
+*Set target quantities for gathering actions with automatic stop when reached.*
 
 ---
 
@@ -31,6 +46,15 @@ TRY THIS！
 ###
 1. Install <span style="color: #9C27B0;">**Tampermonkey**</span> or similar userscript manager
 2. Install this scriptt
+---
+
+## 📸 使用截图 / Screenshots
+
+| 中文界面 / Chinese UI | 英文界面 / English UI |
+|---------|---------|
+| ![制造界面](img/1.png) | ![Crafting Interface](img/4.png) |
+| ![炼金界面](img/2.png) | ![Alchemy Interface](img/5.png) |
+| ![采集界面](img/3.png) | ![Gathering Interface](img/6.png) |
 
 ---
 
@@ -55,6 +79,22 @@ TRY THIS！
 **<span style="color: #FF9800;">4.1 No Botting:</span>** Do not use any automation that plays the game for you.
 
 **<span style="color: #FF9800;">4.2 Scripts and Extensions:</span>** Any scripts or extensions <span style="color: #F44336;">**must not take any actions for the player**</span> (send any requests to server). You are allowed to use them <span style="color: #2196F3;">*purely for information display purposes or UI improvements*</span> (ex: Display combat summary, track drops, move buttons to different location)
+
+---
+
+## 🔄 更新日志 / Changelog
+
+### v3.0.0
+- 将自动计算购买材料和炼金利润计算器合并
+- 新增按目标数量采集的功能
+
+---
+
+## 🤝 贡献与反馈 / Contribution & Feedback
+
+如果您在使用过程中遇到问题或有改进建议，欢迎反馈！
+
+*If you encounter any issues or have suggestions for improvements, feedback is welcome!*
 
 ---
 
