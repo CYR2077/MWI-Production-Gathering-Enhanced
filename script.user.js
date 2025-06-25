@@ -3,7 +3,7 @@
 // @name:zh-CN   [银河奶牛]生产采集增强
 // @name:en      MWI Production & Gathering Enhanced
 // @namespace    http://tampermonkey.net/
-// @version      3.0.0
+// @version      3.0.1
 // @description  计算制造、烹饪、强化、房屋所需材料并一键购买，计算实时炼金利润，增加按照目标材料数量进行采集的功能
 // @description:en  Calculate materials for crafting, cooking, enhancing, housing with one-click purchase, calculate real-time alchemy profits, add target-based gathering functionality
 // @author       XIxixi297
@@ -45,7 +45,7 @@
 
         // 语言配置
         const LANG = (navigator.language || 'en').toLowerCase().includes('zh') ? {
-            directBuy: '直够材料(左一)', bidOrder: '求购材料(右一)',
+            directBuy: '直购材料(左一)', bidOrder: '求购材料(右一)',
             directBuyUpgrade: '左一', bidOrderUpgrade: '右一',
             buying: '⏳ 购买中...', submitting: '📋 提交中...',
             missing: '缺:', sufficient: '材料充足！', sufficientUpgrade: '升级物品充足！',
