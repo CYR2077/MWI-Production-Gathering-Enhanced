@@ -1,8 +1,8 @@
 #  [银河奶牛] 生产采集增强 / MWI Production & Gathering Enhanced
 
-计算制造、烹饪、强化、房屋所需材料并一键购买，计算实时炼金利润，增加按照目标材料数量进行采集的功能。
+计算制造、烹饪、强化、房屋所需材料并一键购买，计算实时炼金利润，增加按照目标材料数量进行采集的功能，快速切换角色。
 
-*Calculate materials for crafting, cooking, enhancing, housing with one-click purchase, calculate real-time alchemy profits, add target-based gathering functionality.*
+*Calculate materials for crafting, cooking, enhancing, housing with one-click purchase, calculate real-time alchemy profits, add target-based gathering functionality, fast character switching.*
 
 ---
 
@@ -35,6 +35,11 @@
 
 *Set target quantities for gathering actions with automatic stop when reached.*
 
+### 🔄 快速角色切换 / Fast Character Switching
+- **一键切换**：点击头像即可快速切换角色
+
+*Click avatar to quickly switch between characters with bilingual support, smart caching, and clear game mode indicators.*
+
 ---
 
 ## 🔧 安装说明 / Installation
@@ -45,7 +50,8 @@
 2. 安装此脚本
 ###
 1. Install <span style="color: #9C27B0;">**Tampermonkey**</span> or similar userscript manager
-2. Install this scriptt
+2. Install this script
+
 ---
 
 ## 📸 使用截图 / Screenshots
@@ -55,6 +61,7 @@
 | ![制造界面](img/1.png) | ![Crafting Interface](img/4.png) |
 | ![炼金界面](img/2.png) | ![Alchemy Interface](img/5.png) |
 | ![采集界面](img/3.png) | ![Gathering Interface](img/6.png) |
+| ![角色切换界面](img/7.png) | ![Character Switching Interface](img/8.png) |
 
 ---
 
@@ -83,6 +90,12 @@
 ---
 
 ## 🔄 更新日志 / Changelog
+
+### v3.1.0
+- 新增快速角色切换功能
+
+### v3.0.1
+- 修改错别字...
 
 ### v3.0.0
 - 将自动计算购买材料和炼金利润计算器合并

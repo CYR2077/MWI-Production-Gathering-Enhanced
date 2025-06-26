@@ -3,9 +3,9 @@
 // @name:zh-CN   [银河奶牛]生产采集增强
 // @name:en      MWI Production & Gathering Enhanced
 // @namespace    http://tampermonkey.net/
-// @version      3.0.1
-// @description  计算制造、烹饪、强化、房屋所需材料并一键购买，计算实时炼金利润，增加按照目标材料数量进行采集的功能
-// @description:en  Calculate materials for crafting, cooking, enhancing, housing with one-click purchase, calculate real-time alchemy profits, add target-based gathering functionality
+// @version      3.1.0
+// @description  计算制造、烹饪、强化、房屋所需材料并一键购买，计算实时炼金利润，增加按照目标材料数量进行采集的功能，快速切换角色
+// @description:en  Calculate materials for crafting, cooking, enhancing, housing with one-click purchase, calculate real-time alchemy profits, add target-based gathering functionality, fast character switching
 // @author       XIxixi297
 // @license      CC-BY-NC-SA-4.0
 // @match        https://www.milkywayidle.com/*
@@ -1757,6 +1757,416 @@
         if (!bids?.length) throw new Error('没有可用的买单');
         return bids[0].price;
     }
+
+    /**
+ * 银河奶牛角色快速切换器
+ * 支持双语、内存缓存、点击头像切换
+ */
+    class CharacterSwitcher {
+        constructor(options = {}) {
+            // 配置选项
+            this.config = {
+                autoInit: true,
+                preloadDelay: 2000,
+                avatarSelector: '.Header_avatar__2RQgo',
+                characterInfoSelector: '.Header_characterInfo__3ixY8',
+                ...options
+            };
+
+            // 内存缓存
+            this.charactersCache = null;
+            this.isLoadingCharacters = false;
+            this.observer = null;
+
+            // 双语配置
+            this.languages = {
+                'zh': {
+                    switchCharacter: '切换角色',
+                    noCharacterData: '暂无角色数据，请刷新页面重试',
+                    current: '当前', switch: '切换', standard: '标准', ironcow: '铁牛'
+                },
+                'en': {
+                    switchCharacter: 'Switch Character',
+                    noCharacterData: 'No character data available, please refresh the page',
+                    current: 'Current', switch: 'Switch', standard: 'Standard', ironcow: 'Iron Cow'
+                }
+            };
+
+            if (this.config.autoInit) {
+                this.init();
+            }
+        }
+
+        // 初始化
+        init() {
+            this.setupEventListeners();
+            this.startObserver();
+            if (this.config.preloadDelay > 0) {
+                setTimeout(() => this.preloadCharacters(), this.config.preloadDelay);
+            }
+        }
+
+        // 销毁实例
+        destroy() {
+            if (this.observer) {
+                this.observer.disconnect();
+                this.observer = null;
+            }
+            this.removeEventListeners();
+            this.closeDropdown();
+            this.charactersCache = null;
+        }
+
+        // 工具方法
+        getCurrentLanguage() {
+            return (navigator.language || 'en').startsWith('zh') ? 'zh' : 'en';
+        }
+
+        getText(key) {
+            return this.languages[this.getCurrentLanguage()][key] || key;
+        }
+
+        getCurrentCharacterId() {
+            return new URLSearchParams(window.location.search).get('characterId');
+        }
+
+        getServerType() {
+            return window.location.hostname.includes('test') ? 'test' : 'main';
+        }
+
+        getApiUrl() {
+            return this.getServerType() === 'test'
+                ? 'https://api-test.milkywayidle.com/v1/characters'
+                : 'https://api.milkywayidle.com/v1/characters';
+        }
+
+        // 从API获取角色数据
+        async fetchCharactersFromAPI() {
+            const response = await fetch(this.getApiUrl(), {
+                method: 'GET',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include'
+            });
+
+            if (!response.ok) {
+                throw new Error(`API请求失败: ${response.status}`);
+            }
+
+            const data = await response.json();
+            return data.characters || [];
+        }
+
+        // 处理角色数据格式
+        processCharacters(charactersData) {
+            return charactersData.map(character => {
+                if (!character.id || !character.name) return null;
+
+                const mode = character.gameMode === 'standard' ? this.getText('standard') :
+                    character.gameMode === 'ironcow' ? this.getText('ironcow') : '';
+                const displayText = mode ? `${mode}(${character.name})` : character.name;
+
+                return {
+                    id: character.id,
+                    name: character.name,
+                    mode, gameMode: character.gameMode,
+                    link: `${window.location.origin}/game?characterId=${character.id}`,
+                    displayText
+                };
+            }).filter(Boolean);
+        }
+
+        // 带缓存的角色数据获取
+        async getCharacters() {
+            if (this.isLoadingCharacters) {
+                while (this.isLoadingCharacters) {
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                }
+                return this.charactersCache || [];
+            }
+            if (this.charactersCache) return this.charactersCache;
+
+            this.isLoadingCharacters = true;
+            try {
+                const charactersData = await this.fetchCharactersFromAPI();
+                this.charactersCache = this.processCharacters(charactersData);
+                return this.charactersCache;
+            } catch (error) {
+                console.log('获取角色数据失败:', error);
+                return [];
+            } finally {
+                this.isLoadingCharacters = false;
+            }
+        }
+
+        // 预加载角色数据
+        async preloadCharacters() {
+            try {
+                await this.getCharacters();
+            } catch (error) {
+                console.log('预加载角色数据失败:', error);
+            }
+        }
+
+        // 清除缓存
+        clearCache() {
+            this.charactersCache = null;
+        }
+
+        // 为头像添加点击事件
+        addAvatarClickHandler() {
+            const avatar = document.querySelector(this.config.avatarSelector);
+            if (!avatar || avatar.hasAttribute('data-character-switch-added')) return;
+
+            avatar.setAttribute('data-character-switch-added', 'true');
+            avatar.style.cursor = 'pointer';
+            avatar.title = 'Click to switch character';
+
+            const mouseenterHandler = () => {
+                Object.assign(avatar.style, {
+                    backgroundColor: 'var(--item-background-hover)',
+                    borderColor: 'var(--item-border-hover)',
+                    boxShadow: '0 0 8px rgba(152, 167, 233, 0.5)',
+                    transition: 'all 0.2s ease'
+                });
+            };
+
+            const mouseleaveHandler = () => {
+                Object.assign(avatar.style, {
+                    backgroundColor: '', borderColor: '', boxShadow: ''
+                });
+            };
+
+            const clickHandler = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                this.toggleDropdown();
+            };
+
+            avatar.addEventListener('mouseenter', mouseenterHandler);
+            avatar.addEventListener('mouseleave', mouseleaveHandler);
+            avatar.addEventListener('click', clickHandler);
+
+            // 存储事件处理器以便后续移除
+            avatar._characterSwitchHandlers = { mouseenterHandler, mouseleaveHandler, clickHandler };
+        }
+
+        // 移除头像事件监听器
+        removeEventListeners() {
+            const avatar = document.querySelector(this.config.avatarSelector);
+            if (avatar && avatar._characterSwitchHandlers) {
+                const { mouseenterHandler, mouseleaveHandler, clickHandler } = avatar._characterSwitchHandlers;
+                avatar.removeEventListener('mouseenter', mouseenterHandler);
+                avatar.removeEventListener('mouseleave', mouseleaveHandler);
+                avatar.removeEventListener('click', clickHandler);
+                avatar.removeAttribute('data-character-switch-added');
+                delete avatar._characterSwitchHandlers;
+            }
+        }
+
+        // 切换下拉菜单显示/隐藏
+        toggleDropdown() {
+            const existing = document.querySelector('#character-switch-dropdown');
+            if (existing) {
+                this.closeDropdown();
+            } else {
+                this.createDropdown();
+            }
+        }
+
+        // 关闭下拉菜单
+        closeDropdown() {
+            const existing = document.querySelector('#character-switch-dropdown');
+            if (existing) {
+                existing.remove();
+            }
+        }
+
+        // 创建角色切换下拉菜单
+        async createDropdown() {
+            const avatar = document.querySelector(this.config.avatarSelector);
+            if (!avatar) return;
+
+            // 创建下拉容器
+            const dropdown = document.createElement('div');
+            dropdown.id = 'character-switch-dropdown';
+            Object.assign(dropdown.style, {
+                position: 'absolute', top: '100%', right: '0',
+                backgroundColor: 'rgba(30, 30, 50, 0.95)',
+                border: '1px solid rgba(255, 255, 255, 0.2)',
+                borderRadius: '8px', padding: '8px',
+                minWidth: '280px', maxWidth: '400px', maxHeight: '400px',
+                overflowY: 'auto', backdropFilter: 'blur(10px)',
+                boxShadow: '0 4px 20px rgba(0, 0, 0, 0.3)',
+                zIndex: '9999', marginTop: '5px'
+            });
+
+            const title = document.createElement('div');
+            title.textContent = this.getText('switchCharacter');
+            Object.assign(title.style, {
+                color: 'rgba(255, 255, 255, 0.9)', fontSize: '14px', fontWeight: 'bold',
+                padding: '8px 12px', borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+                marginBottom: '8px'
+            });
+            dropdown.appendChild(title);
+
+            // 将下拉菜单添加到页面
+            const characterInfo = document.querySelector(this.config.characterInfoSelector);
+            if (characterInfo) {
+                characterInfo.style.position = 'relative';
+                characterInfo.appendChild(dropdown);
+            }
+
+            // 显示加载状态（如果需要）
+            if (!this.charactersCache) {
+                const loadingMsg = document.createElement('div');
+                loadingMsg.className = 'loading-indicator';
+                loadingMsg.textContent = 'Loading...';
+                Object.assign(loadingMsg.style, {
+                    color: 'rgba(255, 255, 255, 0.6)', fontSize: '12px',
+                    padding: '8px 12px', textAlign: 'center', fontStyle: 'italic'
+                });
+                dropdown.appendChild(loadingMsg);
+            }
+
+            try {
+                // 获取角色数据并渲染
+                const characters = await this.getCharacters();
+                const loadingMsg = dropdown.querySelector('.loading-indicator');
+                if (loadingMsg) loadingMsg.remove();
+
+                // 无数据时显示提示
+                if (characters.length === 0) {
+                    const noDataMsg = document.createElement('div');
+                    noDataMsg.textContent = this.getText('noCharacterData');
+                    Object.assign(noDataMsg.style, {
+                        color: 'rgba(255, 255, 255, 0.6)', fontSize: '12px',
+                        padding: '8px 12px', textAlign: 'center', fontStyle: 'italic'
+                    });
+                    dropdown.appendChild(noDataMsg);
+                    return;
+                }
+
+                this.renderCharacterButtons(dropdown, characters);
+            } catch (error) {
+                // 错误处理
+                const loadingMsg = dropdown.querySelector('.loading-indicator');
+                if (loadingMsg) loadingMsg.remove();
+
+                const errorMsg = document.createElement('div');
+                errorMsg.textContent = 'Failed to load character data';
+                Object.assign(errorMsg.style, {
+                    color: 'rgba(255, 100, 100, 0.8)', fontSize: '12px',
+                    padding: '8px 12px', textAlign: 'center', fontStyle: 'italic'
+                });
+                dropdown.appendChild(errorMsg);
+            }
+
+            this.setupDropdownCloseHandler(dropdown, avatar);
+        }
+
+        // 渲染角色按钮
+        renderCharacterButtons(dropdown, characters) {
+            // 按钮样式配置
+            const buttonStyle = {
+                padding: '8px 12px', backgroundColor: 'rgba(48, 63, 159, 0.2)',
+                color: 'rgba(255, 255, 255, 0.9)', border: '1px solid rgba(255, 255, 255, 0.1)',
+                borderRadius: '4px', fontSize: '13px', cursor: 'pointer',
+                display: 'block', width: '100%', textDecoration: 'none',
+                marginBottom: '4px', transition: 'all 0.2s ease', textAlign: 'left'
+            };
+
+            const hoverStyle = {
+                backgroundColor: 'rgba(26, 35, 126, 0.4)',
+                borderColor: 'rgba(255, 255, 255, 0.3)'
+            };
+
+            const currentCharacterId = this.getCurrentCharacterId();
+
+            // 为每个角色创建按钮
+            characters.forEach(character => {
+                if (!character) return;
+
+                const isCurrentCharacter = currentCharacterId === character.id.toString();
+                const characterButton = document.createElement('a');
+
+                Object.assign(characterButton.style, buttonStyle);
+                characterButton.href = character.link;
+                characterButton.innerHTML = `
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <div style="font-weight: ${isCurrentCharacter ? 'bold' : 'normal'};">
+                            ${character.displayText || character.name || 'Unknown'}
+                        </div>
+                        <div style="font-size: 11px; opacity: 0.7;">ID: ${character.id}</div>
+                    </div>
+                    <div style="font-size: 11px; color: ${isCurrentCharacter ? '#2196F3' : '#4CAF50'};">
+                        ${isCurrentCharacter ? this.getText('current') : this.getText('switch')}
+                    </div>
+                </div>
+            `;
+
+                if (isCurrentCharacter) {
+                    Object.assign(characterButton.style, {
+                        backgroundColor: 'rgba(33, 150, 243, 0.2)',
+                        borderColor: 'rgba(33, 150, 243, 0.4)'
+                    });
+                }
+
+                const hoverStyles = isCurrentCharacter ?
+                    { backgroundColor: 'rgba(33, 150, 243, 0.3)', borderColor: 'rgba(33, 150, 243, 0.6)' } :
+                    hoverStyle;
+
+                const normalStyles = isCurrentCharacter ?
+                    { backgroundColor: 'rgba(33, 150, 243, 0.2)', borderColor: 'rgba(33, 150, 243, 0.4)' } :
+                    buttonStyle;
+
+                characterButton.addEventListener('mouseover', () => Object.assign(characterButton.style, hoverStyles));
+                characterButton.addEventListener('mouseout', () => Object.assign(characterButton.style, normalStyles));
+
+                dropdown.appendChild(characterButton);
+            });
+        }
+
+        // 设置下拉菜单关闭处理
+        setupDropdownCloseHandler(dropdown, avatar) {
+            const closeHandler = (e) => {
+                if (!dropdown.contains(e.target) && !avatar.contains(e.target)) {
+                    dropdown.remove();
+                    document.removeEventListener('click', closeHandler);
+                }
+            };
+
+            setTimeout(() => document.addEventListener('click', closeHandler), 100);
+        }
+
+        // DOM变化时刷新
+        refresh() {
+            try {
+                this.addAvatarClickHandler();
+            } catch (error) {
+                console.log('刷新函数出错:', error);
+            }
+        }
+
+        // 设置事件监听器
+        setupEventListeners() {
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', () => this.refresh());
+            } else {
+                this.refresh();
+            }
+        }
+
+        // 开始DOM观察器
+        startObserver() {
+            const config = { attributes: true, childList: true, subtree: true };
+            this.observer = new MutationObserver(() => this.refresh());
+            this.observer.observe(document, config);
+        }
+    }
+
+    
+    const characterSwitcher = new CharacterSwitcher();
 
     // 注入界面脚本
     function injectLocalScript() {
