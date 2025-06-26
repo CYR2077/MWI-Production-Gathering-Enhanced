@@ -1758,10 +1758,7 @@
         return bids[0].price;
     }
 
-    /**
- * 银河奶牛角色快速切换器
- * 支持双语、内存缓存、点击头像切换
- */
+    //==========角色快速切换==========
     class CharacterSwitcher {
         constructor(options = {}) {
             // 配置选项
@@ -1775,6 +1772,7 @@
 
             // 内存缓存
             this.charactersCache = null;
+            this.rawCharactersData = null; // 存储原始API数据
             this.isLoadingCharacters = false;
             this.observer = null;
 
@@ -1783,12 +1781,30 @@
                 'zh': {
                     switchCharacter: '切换角色',
                     noCharacterData: '暂无角色数据，请刷新页面重试',
-                    current: '当前', switch: '切换', standard: '标准', ironcow: '铁牛'
+                    current: '当前', switch: '切换', standard: '标准', ironcow: '铁牛',
+                    lastOnline: '上次在线',
+                    timeAgo: {
+                        justNow: '刚刚',
+                        minutesAgo: '分钟前',
+                        hoursAgo: '小时前',
+                        daysAgo: '天前',
+                        weeksAgo: '周前',
+                        monthsAgo: '个月前'
+                    }
                 },
                 'en': {
                     switchCharacter: 'Switch Character',
                     noCharacterData: 'No character data available, please refresh the page',
-                    current: 'Current', switch: 'Switch', standard: 'Standard', ironcow: 'IronCow'
+                    current: 'Current', switch: 'Switch', standard: 'Standard', ironcow: 'IronCow',
+                    lastOnline: 'Last online',
+                    timeAgo: {
+                        justNow: 'just now',
+                        minutesAgo: 'min ago',
+                        hoursAgo: 'hr ago',
+                        daysAgo: 'd ago',
+                        weeksAgo: 'w ago',
+                        monthsAgo: 'mo ago'
+                    }
                 }
             };
 
@@ -1815,6 +1831,7 @@
             this.removeEventListeners();
             this.closeDropdown();
             this.charactersCache = null;
+            this.rawCharactersData = null;
         }
 
         // 工具方法
@@ -1838,6 +1855,29 @@
             return this.getServerType() === 'test'
                 ? 'https://api-test.milkywayidle.com/v1/characters'
                 : 'https://api.milkywayidle.com/v1/characters';
+        }
+
+        // 计算相对时间
+        getTimeAgo(lastOfflineTime) {
+            if (!lastOfflineTime) return this.getText('timeAgo').justNow;
+
+            const now = new Date();
+            const lastOnline = new Date(lastOfflineTime);
+            const diffMs = now - lastOnline;
+            const diffMinutes = Math.floor(diffMs / (1000 * 60));
+            const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+            const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+            const diffWeeks = Math.floor(diffDays / 7);
+            const diffMonths = Math.floor(diffDays / 30);
+
+            const timeAgo = this.getText('timeAgo');
+
+            if (diffMinutes < 1) return timeAgo.justNow;
+            if (diffMinutes < 60) return `${diffMinutes}${timeAgo.minutesAgo}`;
+            if (diffHours < 24) return `${diffHours}${timeAgo.hoursAgo}`;
+            if (diffDays < 7) return `${diffDays}${timeAgo.daysAgo}`;
+            if (diffWeeks < 4) return `${diffWeeks}${timeAgo.weeksAgo}`;
+            return `${diffMonths}${timeAgo.monthsAgo}`;
         }
 
         // 从API获取角色数据
@@ -1864,30 +1904,53 @@
                 const mode = character.gameMode === 'standard' ? this.getText('standard') :
                     character.gameMode === 'ironcow' ? this.getText('ironcow') : '';
                 const displayText = mode ? `${mode}(${character.name})` : character.name;
+                const lastOnlineText = this.getTimeAgo(character.lastOfflineTime);
 
                 return {
                     id: character.id,
                     name: character.name,
                     mode, gameMode: character.gameMode,
                     link: `${window.location.origin}/game?characterId=${character.id}`,
-                    displayText
+                    displayText,
+                    isOnline: character.isOnline,
+                    lastOfflineTime: character.lastOfflineTime,
+                    lastOnlineText
                 };
             }).filter(Boolean);
         }
 
+        // 重新处理时间显示（用于更新缓存数据的时间）
+        refreshTimeDisplay(characters) {
+            return characters.map(character => ({
+                ...character,
+                lastOnlineText: this.getTimeAgo(character.lastOfflineTime)
+            }));
+        }
+
         // 带缓存的角色数据获取
-        async getCharacters() {
+        async getCharacters(forceRefreshTime = false) {
             if (this.isLoadingCharacters) {
                 while (this.isLoadingCharacters) {
                     await new Promise(resolve => setTimeout(resolve, 100));
                 }
+                // 如果需要刷新时间显示，即使有缓存也要重新处理
+                if (forceRefreshTime && this.rawCharactersData) {
+                    return this.refreshTimeDisplay(this.processCharacters(this.rawCharactersData));
+                }
                 return this.charactersCache || [];
             }
+
+            // 如果有缓存且需要刷新时间，重新处理时间显示
+            if (this.charactersCache && forceRefreshTime && this.rawCharactersData) {
+                return this.refreshTimeDisplay(this.processCharacters(this.rawCharactersData));
+            }
+
             if (this.charactersCache) return this.charactersCache;
 
             this.isLoadingCharacters = true;
             try {
                 const charactersData = await this.fetchCharactersFromAPI();
+                this.rawCharactersData = charactersData; // 保存原始数据
                 this.charactersCache = this.processCharacters(charactersData);
                 return this.charactersCache;
             } catch (error) {
@@ -1910,6 +1973,13 @@
         // 清除缓存
         clearCache() {
             this.charactersCache = null;
+            this.rawCharactersData = null;
+        }
+
+        // 强制刷新数据
+        async forceRefresh() {
+            this.clearCache();
+            return await this.getCharacters();
         }
 
         // 为头像添加点击事件
@@ -2029,8 +2099,8 @@
             }
 
             try {
-                // 获取角色数据并渲染
-                const characters = await this.getCharacters();
+                // *** 关键修改：每次展开时都强制刷新时间显示 ***
+                const characters = await this.getCharacters(true); // 传入 true 强制刷新时间
                 const loadingMsg = dropdown.querySelector('.loading-indicator');
                 if (loadingMsg) loadingMsg.remove();
 
@@ -2091,16 +2161,29 @@
 
                 Object.assign(characterButton.style, buttonStyle);
                 characterButton.href = character.link;
+
+                // 状态显示逻辑
+                const statusText = isCurrentCharacter ? this.getText('current') : this.getText('switch');
+                const statusColor = isCurrentCharacter ? '#2196F3' : '#4CAF50';
+
+                // 在线状态和时间显示
+                const onlineStatus = character.isOnline ?
+                    `<span style="color: #4CAF50;">●</span> Online` :
+                    `<span style="color: #f44336;">●</span> ${this.getText('lastOnline')}: ${character.lastOnlineText}`;
+
                 characterButton.innerHTML = `
                 <div style="display: flex; justify-content: space-between; align-items: center;">
-                    <div>
+                    <div style="flex: 1;">
                         <div style="font-weight: ${isCurrentCharacter ? 'bold' : 'normal'};">
                             ${character.displayText || character.name || 'Unknown'}
                         </div>
                         <div style="font-size: 11px; opacity: 0.7;">ID: ${character.id}</div>
+                        <div style="font-size: 10px; opacity: 0.6; margin-top: 2px;">
+                            ${onlineStatus}
+                        </div>
                     </div>
-                    <div style="font-size: 11px; color: ${isCurrentCharacter ? '#2196F3' : '#4CAF50'};">
-                        ${isCurrentCharacter ? this.getText('current') : this.getText('switch')}
+                    <div style="font-size: 11px; color: ${statusColor};">
+                        ${statusText}
                     </div>
                 </div>
             `;
@@ -2122,6 +2205,11 @@
 
                 characterButton.addEventListener('mouseover', () => Object.assign(characterButton.style, hoverStyles));
                 characterButton.addEventListener('mouseout', () => Object.assign(characterButton.style, normalStyles));
+
+                // 点击时清除缓存以便下次更新数据
+                characterButton.addEventListener('click', () => {
+                    this.clearCache();
+                });
 
                 dropdown.appendChild(characterButton);
             });
@@ -2165,8 +2253,9 @@
         }
     }
 
-    
+
     const characterSwitcher = new CharacterSwitcher();
+
 
     // 注入界面脚本
     function injectLocalScript() {
