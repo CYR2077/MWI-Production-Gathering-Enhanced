@@ -1788,7 +1788,7 @@
                 'en': {
                     switchCharacter: 'Switch Character',
                     noCharacterData: 'No character data available, please refresh the page',
-                    current: 'Current', switch: 'Switch', standard: 'Standard', ironcow: 'Iron Cow'
+                    current: 'Current', switch: 'Switch', standard: 'Standard', ironcow: 'IronCow'
                 }
             };
 
