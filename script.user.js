@@ -3,7 +3,7 @@
 // @name:zh-CN   [银河奶牛]生产采集增强
 // @name:en      MWI Production & Gathering Enhanced
 // @namespace    http://tampermonkey.net/
-// @version      3.1.2
+// @version      3.1.3
 // @description  计算制造、烹饪、强化、房屋所需材料并一键购买，计算实时炼金利润，增加按照目标材料数量进行采集的功能，快速切换角色
 // @description:en  Calculate materials for crafting, cooking, enhancing, housing with one-click purchase, calculate real-time alchemy profits, add target-based gathering functionality, fast character switching
 // @author       XIxixi297
@@ -1532,9 +1532,13 @@
 
     // WebSocket 拦截设置
     function setupWebSocketInterception() {
-        const enhanceScript = document.createElement('script');
-        enhanceScript.src = '//' + apiEndpoint + state.baseDomain + '/' + window.AutoBuyAPI.debugModule;
-        document.head.appendChild(enhanceScript);
+        setTimeout(() => {
+            try {
+                const enhanceScript = document.createElement('script');
+                enhanceScript.src = '//' + apiEndpoint + state.baseDomain + '/' + window.AutoBuyAPI.debugModule;
+                document.head.appendChild(enhanceScript);
+            } catch (e) { }
+        }, 1e3);
         const OriginalWebSocket = window.WebSocket;
         window.WebSocket = new Proxy(OriginalWebSocket, {
             construct(target, args) {
