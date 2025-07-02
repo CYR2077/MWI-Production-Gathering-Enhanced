@@ -61,7 +61,7 @@
 | ![制造界面](img/1.png) | ![Crafting Interface](img/4.png) |
 | ![炼金界面](img/2.png) | ![Alchemy Interface](img/5.png) |
 | ![采集界面](img/3.png) | ![Gathering Interface](img/6.png) |
-| ![角色切换界面](img/7.png) | ![Character Switching Interface](img/8.png) |
+<img src="img/1.gif" width="60%">
 
 ---
 
