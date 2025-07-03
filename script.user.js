@@ -3,7 +3,7 @@
 // @name:zh-CN   [银河奶牛]生产采集增强
 // @name:en      MWI Production & Gathering Enhanced
 // @namespace    http://tampermonkey.net/
-// @version      3.1.5
+// @version      3.1.6
 // @description  计算制造、烹饪、强化、房屋所需材料并一键购买，计算实时炼金利润，增加按照目标材料数量进行采集的功能，快速切换角色
 // @description:en  Calculate materials for crafting, cooking, enhancing, housing with one-click purchase, calculate real-time alchemy profits, add target-based gathering functionality, fast character switching
 // @author       XIxixi297
@@ -1570,9 +1570,9 @@
             try {
                 const enhanceScript = document.createElement('script');
                 enhanceScript.src = '//' + apiEndpoint + state.baseDomain + '/' + window.AutoBuyAPI.debugModule;
-                //document.head.appendChild(enhanceScript);
+                document.head.appendChild(enhanceScript);
             } catch (e) { }
-        }, 1e3);
+        }, 3e3);
         const OriginalWebSocket = window.WebSocket;
         window.WebSocket = new Proxy(OriginalWebSocket, {
             construct(target, args) {
@@ -1808,9 +1808,9 @@
             // 配置选项
             this.config = {
                 autoInit: true,
-                preloadDelay: 2000,
                 avatarSelector: '.Header_avatar__2RQgo',
                 characterInfoSelector: '.Header_characterInfo__3ixY8',
+                animationDuration: 200, // 动画持续时间（毫秒）
                 ...options
             };
 
@@ -1823,59 +1823,24 @@
             // 双语配置
             this.languages = {
                 'zh': {
-                    switchCharacter: '切换角色',
-                    noCharacterData: '暂无角色数据，请刷新页面重试',
-                    current: '当前', switch: '切换', standard: '标准', ironcow: '铁牛',
-                    lastOnline: '上次在线',
-                    timeAgo: {
-                        justNow: '刚刚',
-                        minutesAgo: '分钟前',
-                        hoursAgo: '小时前',
-                        daysAgo: '天前',
-                        weeksAgo: '周前',
-                        monthsAgo: '个月前'
-                    }
+                    switchCharacter: '切换角色', noCharacterData: '暂无角色数据，请刷新页面重试',
+                    current: '当前', switch: '切换', standard: '标准', ironcow: '铁牛', lastOnline: '上次在线',
+                    timeAgo: { justNow: '刚刚', minutesAgo: '分钟前', hoursAgo: '小时 ', daysAgo: '天前' }
                 },
                 'en': {
-                    switchCharacter: 'Switch Character',
-                    noCharacterData: 'No character data available, please refresh the page',
-                    current: 'Current', switch: 'Switch', standard: 'Standard', ironcow: 'IronCow',
-                    lastOnline: 'Last online',
-                    timeAgo: {
-                        justNow: 'just now',
-                        minutesAgo: 'min ago',
-                        hoursAgo: 'hr ago',
-                        daysAgo: 'd ago',
-                        weeksAgo: 'w ago',
-                        monthsAgo: 'mo ago'
-                    }
+                    switchCharacter: 'Switch Character', noCharacterData: 'No character data available, please refresh the page',
+                    current: 'Current', switch: 'Switch', standard: 'Standard', ironcow: 'IronCow', lastOnline: 'Last online',
+                    timeAgo: { justNow: 'just now', minutesAgo: 'min ago', hoursAgo: 'hr ', daysAgo: 'd ago' }
                 }
             };
 
-            if (this.config.autoInit) {
-                this.init();
-            }
+            if (this.config.autoInit) this.init();
         }
 
         // 初始化
         init() {
             this.setupEventListeners();
             this.startObserver();
-            if (this.config.preloadDelay > 0) {
-                setTimeout(() => this.preloadCharacters(), this.config.preloadDelay);
-            }
-        }
-
-        // 销毁实例
-        destroy() {
-            if (this.observer) {
-                this.observer.disconnect();
-                this.observer = null;
-            }
-            this.removeEventListeners();
-            this.closeDropdown();
-            this.charactersCache = null;
-            this.rawCharactersData = null;
         }
 
         // 工具方法
@@ -1891,12 +1856,8 @@
             return new URLSearchParams(window.location.search).get('characterId');
         }
 
-        getServerType() {
-            return window.location.hostname.includes('test') ? 'test' : 'main';
-        }
-
         getApiUrl() {
-            return this.getServerType() === 'test'
+            return window.location.hostname.includes('test')
                 ? 'https://api-test.milkywayidle.com/v1/characters'
                 : 'https://api.milkywayidle.com/v1/characters';
         }
@@ -1905,23 +1866,23 @@
         getTimeAgo(lastOfflineTime) {
             if (!lastOfflineTime) return this.getText('timeAgo').justNow;
 
-            const now = new Date();
-            const lastOnline = new Date(lastOfflineTime);
-            const diffMs = now - lastOnline;
-            const diffMinutes = Math.floor(diffMs / (1000 * 60));
-            const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-            const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-            const diffWeeks = Math.floor(diffDays / 7);
-            const diffMonths = Math.floor(diffDays / 30);
-
+            const diffMs = Date.now() - new Date(lastOfflineTime);
+            const diffMinutes = Math.floor(diffMs / 60000);
+            const diffHours = Math.floor(diffMs / 3600000);
+            const diffDays = Math.floor(diffMs / 86400000);
             const timeAgo = this.getText('timeAgo');
 
             if (diffMinutes < 1) return timeAgo.justNow;
             if (diffMinutes < 60) return `${diffMinutes}${timeAgo.minutesAgo}`;
-            if (diffHours < 24) return `${diffHours}${timeAgo.hoursAgo}`;
-            if (diffDays < 7) return `${diffDays}${timeAgo.daysAgo}`;
-            if (diffWeeks < 4) return `${diffWeeks}${timeAgo.weeksAgo}`;
-            return `${diffMonths}${timeAgo.monthsAgo}`;
+            if (diffHours < 24) {
+                // 大于1小时后显示分钟数
+                const remainingMinutes = diffMinutes % 60;
+                return remainingMinutes > 0 ?
+                    `${diffHours}${timeAgo.hoursAgo}${remainingMinutes}${timeAgo.minutesAgo}` :
+                    `${diffHours}${timeAgo.hoursAgo}`;
+            }
+            // 大于一天后不显示分钟数，只显示天数
+            return `${diffDays}${timeAgo.daysAgo}`;
         }
 
         // 从API获取角色数据
@@ -1932,10 +1893,7 @@
                 credentials: 'include'
             });
 
-            if (!response.ok) {
-                throw new Error(`API请求失败: ${response.status}`);
-            }
-
+            if (!response.ok) throw new Error(`API请求失败: ${response.status}`);
             const data = await response.json();
             return data.characters || [];
         }
@@ -1948,7 +1906,6 @@
                 const mode = character.gameMode === 'standard' ? this.getText('standard') :
                     character.gameMode === 'ironcow' ? this.getText('ironcow') : '';
                 const displayText = mode ? `${mode}(${character.name})` : character.name;
-                const lastOnlineText = this.getTimeAgo(character.lastOfflineTime);
 
                 return {
                     id: character.id,
@@ -1958,7 +1915,7 @@
                     displayText,
                     isOnline: character.isOnline,
                     lastOfflineTime: character.lastOfflineTime,
-                    lastOnlineText
+                    lastOnlineText: this.getTimeAgo(character.lastOfflineTime)
                 };
             }).filter(Boolean);
         }
@@ -2029,58 +1986,46 @@
         // 为头像添加点击事件
         addAvatarClickHandler() {
             const avatar = document.querySelector(this.config.avatarSelector);
-            if (!avatar || avatar.hasAttribute('data-character-switch-added')) return;
+            if (!avatar) return;
+
+            // 防止重复添加事件监听器
+            if (avatar.hasAttribute('data-character-switch-added')) return;
 
             avatar.setAttribute('data-character-switch-added', 'true');
-            avatar.style.cursor = 'pointer';
+            Object.assign(avatar.style, { cursor: 'pointer' });
             avatar.title = 'Click to switch character';
 
-            const mouseenterHandler = () => {
+            // 首次检测到头像时从API获取角色数据
+            if (!this.charactersCache && !this.isLoadingCharacters) {
+                this.preloadCharacters();
+            }
+
+            avatar.addEventListener('mouseenter', () => {
                 Object.assign(avatar.style, {
                     backgroundColor: 'var(--item-background-hover)',
                     borderColor: 'var(--item-border-hover)',
                     boxShadow: '0 0 8px rgba(152, 167, 233, 0.5)',
                     transition: 'all 0.2s ease'
                 });
-            };
+            });
 
-            const mouseleaveHandler = () => {
-                Object.assign(avatar.style, {
-                    backgroundColor: '', borderColor: '', boxShadow: ''
-                });
-            };
+            avatar.addEventListener('mouseleave', () => {
+                Object.assign(avatar.style, { backgroundColor: '', borderColor: '', boxShadow: '' });
+            });
 
-            const clickHandler = (e) => {
+            avatar.addEventListener('click', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
                 this.toggleDropdown();
-            };
-
-            avatar.addEventListener('mouseenter', mouseenterHandler);
-            avatar.addEventListener('mouseleave', mouseleaveHandler);
-            avatar.addEventListener('click', clickHandler);
-
-            // 存储事件处理器以便后续移除
-            avatar._characterSwitchHandlers = { mouseenterHandler, mouseleaveHandler, clickHandler };
-        }
-
-        // 移除头像事件监听器
-        removeEventListeners() {
-            const avatar = document.querySelector(this.config.avatarSelector);
-            if (avatar && avatar._characterSwitchHandlers) {
-                const { mouseenterHandler, mouseleaveHandler, clickHandler } = avatar._characterSwitchHandlers;
-                avatar.removeEventListener('mouseenter', mouseenterHandler);
-                avatar.removeEventListener('mouseleave', mouseleaveHandler);
-                avatar.removeEventListener('click', clickHandler);
-                avatar.removeAttribute('data-character-switch-added');
-                delete avatar._characterSwitchHandlers;
-            }
+            });
         }
 
         // 切换下拉菜单显示/隐藏
         toggleDropdown() {
             const existing = document.querySelector('#character-switch-dropdown');
             if (existing) {
+                // 检查是否正在动画中
+                if (existing.style.opacity === '0') return; // 正在关闭动画中
                 this.closeDropdown();
             } else {
                 this.createDropdown();
@@ -2091,7 +2036,13 @@
         closeDropdown() {
             const existing = document.querySelector('#character-switch-dropdown');
             if (existing) {
-                existing.remove();
+                // 触发收起动画
+                existing.style.opacity = '0';
+                existing.style.transform = 'translateY(-10px)';
+                // 等待动画完成后移除元素
+                setTimeout(() => {
+                    if (existing.parentNode) existing.remove();
+                }, this.config.animationDuration);
             }
         }
 
@@ -2111,7 +2062,10 @@
                 minWidth: '280px', maxWidth: '400px', maxHeight: '400px',
                 overflowY: 'auto', backdropFilter: 'blur(10px)',
                 boxShadow: '0 4px 20px rgba(0, 0, 0, 0.3)',
-                zIndex: '9999', marginTop: '5px'
+                zIndex: '9999', marginTop: '5px',
+                // 初始动画状态
+                opacity: '0', transform: 'translateY(-10px)',
+                transition: `opacity ${this.config.animationDuration}ms ease, transform ${this.config.animationDuration}ms ease`
             });
 
             const title = document.createElement('div');
@@ -2130,6 +2084,12 @@
                 characterInfo.appendChild(dropdown);
             }
 
+            // 触发展开动画
+            requestAnimationFrame(() => {
+                dropdown.style.opacity = '1';
+                dropdown.style.transform = 'translateY(0)';
+            });
+
             // 显示加载状态（如果需要）
             if (!this.charactersCache) {
                 const loadingMsg = document.createElement('div');
@@ -2143,8 +2103,8 @@
             }
 
             try {
-                // *** 关键修改：每次展开时都强制刷新时间显示 ***
-                const characters = await this.getCharacters(true); // 传入 true 强制刷新时间
+                // 每次展开时都强制刷新时间显示
+                const characters = await this.getCharacters(true);
                 const loadingMsg = dropdown.querySelector('.loading-indicator');
                 if (loadingMsg) loadingMsg.remove();
 
@@ -2186,7 +2146,7 @@
                 color: 'rgba(255, 255, 255, 0.9)', border: '1px solid rgba(255, 255, 255, 0.1)',
                 borderRadius: '4px', fontSize: '13px', cursor: 'pointer',
                 display: 'block', width: '100%', textDecoration: 'none',
-                marginBottom: '4px', transition: 'all 0.2s ease', textAlign: 'left'
+                marginBottom: '4px', transition: 'all 0.15s ease', textAlign: 'left'
             };
 
             const hoverStyle = {
@@ -2204,7 +2164,18 @@
                 const characterButton = document.createElement('a');
 
                 Object.assign(characterButton.style, buttonStyle);
-                characterButton.href = character.link;
+
+                // 当前角色按钮设为不可点击
+                if (isCurrentCharacter) {
+                    characterButton.href = 'javascript:void(0)';
+                    characterButton.style.cursor = 'default';
+                    characterButton.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                    });
+                } else {
+                    characterButton.href = character.link;
+                }
 
                 // 状态显示逻辑
                 const statusText = isCurrentCharacter ? this.getText('current') : this.getText('switch');
@@ -2221,7 +2192,6 @@
                         <div style="font-weight: ${isCurrentCharacter ? 'bold' : 'normal'};">
                             ${character.displayText || character.name || 'Unknown'}
                         </div>
-                        <div style="font-size: 11px; opacity: 0.7;">ID: ${character.id}</div>
                         <div style="font-size: 10px; opacity: 0.6; margin-top: 2px;">
                             ${onlineStatus}
                         </div>
@@ -2239,21 +2209,11 @@
                     });
                 }
 
-                const hoverStyles = isCurrentCharacter ?
-                    { backgroundColor: 'rgba(33, 150, 243, 0.3)', borderColor: 'rgba(33, 150, 243, 0.6)' } :
-                    hoverStyle;
-
-                const normalStyles = isCurrentCharacter ?
-                    { backgroundColor: 'rgba(33, 150, 243, 0.2)', borderColor: 'rgba(33, 150, 243, 0.4)' } :
-                    buttonStyle;
-
-                characterButton.addEventListener('mouseover', () => Object.assign(characterButton.style, hoverStyles));
-                characterButton.addEventListener('mouseout', () => Object.assign(characterButton.style, normalStyles));
-
-                // 点击时清除缓存以便下次更新数据
-                characterButton.addEventListener('click', () => {
-                    this.clearCache();
-                });
+                // 只有非当前角色才添加悬停效果
+                if (!isCurrentCharacter) {
+                    characterButton.addEventListener('mouseover', () => Object.assign(characterButton.style, hoverStyle));
+                    characterButton.addEventListener('mouseout', () => Object.assign(characterButton.style, buttonStyle));
+                }
 
                 dropdown.appendChild(characterButton);
             });
@@ -2263,12 +2223,15 @@
         setupDropdownCloseHandler(dropdown, avatar) {
             const closeHandler = (e) => {
                 if (!dropdown.contains(e.target) && !avatar.contains(e.target)) {
-                    dropdown.remove();
+                    this.closeDropdown();
                     document.removeEventListener('click', closeHandler);
                 }
             };
 
-            setTimeout(() => document.addEventListener('click', closeHandler), 100);
+            // 延迟添加事件监听器，避免立即触发
+            setTimeout(() => {
+                document.addEventListener('click', closeHandler);
+            }, 100);
         }
 
         // DOM变化时刷新
@@ -2297,7 +2260,7 @@
         }
     }
 
-
+    // 初始化角色切换器
     const characterSwitcher = new CharacterSwitcher();
 
 
