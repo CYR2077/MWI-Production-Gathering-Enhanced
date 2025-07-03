@@ -167,22 +167,23 @@
         // 工具函数
         const utils = {
             getCountById(id) {
-                const container = document.querySelector('.Inventory_inventory__17CH2')?.lastChild;
-                if (!container) return 0;
-
-                const items = container.querySelectorAll(".Item_item__2De2O.Item_clickable__3viV6");
-                for (let item of items) {
-                    try {
-                        const reactKey = Object.keys(item).find(key => key.startsWith('__reactProps'));
-                        if (reactKey) {
-                            const itemHrid = item[reactKey].children[0][1]._owner.memoizedProps.itemHrid;
-                            if (itemHrid === \`/items/\${id}\`) {
-                                return item[reactKey].children[0][1]._owner.memoizedProps.count;
-                            }
+                try {
+                    const headerElement = document.querySelector('.Header_header__1DxsV');
+                    const reactKey = Object.keys(headerElement).find(key => key.startsWith('__reactProps'));
+                    const characterItemMap = headerElement[reactKey]?.children?.[0]?._owner?.memoizedProps?.characterItemMap;
+                    
+                    if (!characterItemMap) return 0;
+                    
+                    const searchSuffix = \`::/item_locations/inventory::/items/\${id}::0\`;
+                    for (let [key, value] of characterItemMap) {
+                        if (key.endsWith(searchSuffix)) {
+                            return value?.count || 0;
                         }
-                    } catch { continue; }
+                    }
+                    return 0;
+                } catch {
+                    return 0;
                 }
-                return 0;
             },
 
             extractItemId(svgElement) {
