@@ -3,7 +3,7 @@
 // @name:zh-CN   [银河奶牛]生产采集增强
 // @name:en      MWI Production & Gathering Enhanced
 // @namespace    http://tampermonkey.net/
-// @version      3.1.4
+// @version      3.1.5
 // @description  计算制造、烹饪、强化、房屋所需材料并一键购买，计算实时炼金利润，增加按照目标材料数量进行采集的功能，快速切换角色
 // @description:en  Calculate materials for crafting, cooking, enhancing, housing with one-click purchase, calculate real-time alchemy profits, add target-based gathering functionality, fast character switching
 // @author       XIxixi297
@@ -230,6 +230,30 @@
                 if (abs >= 1e6) return sign + (abs / 1e6).toFixed(1) + 'M';
                 if (abs >= 1e3) return sign + (abs / 1e3).toFixed(1) + 'K';
                 return profit.toString();
+            },
+
+            cleanNumber(text) {
+                let num = text.toString().replace(/\\s/g, '');
+                num = num.replace(/[^\\d,.]/g, '');
+                if (!/\\d/.test(num)) return "0";
+                
+                let separators = num.match(/[,.]/g) || [];
+                
+                if (separators.length === 0) return num + ".0";
+                
+                if (separators.length > 1) {
+                    if (separators.every(s => s === separators[0])) {
+                        return num.replace(/[,.]/g, '') + ".0";
+                    }
+                    let lastSep = num.lastIndexOf(',') > num.lastIndexOf('.') ? ',' : '.';
+                    let parts = num.split(lastSep);
+                    return parts[0].replace(/[,.]/g, '') + '.' + parts[1];
+                }
+                
+                let sep = separators[0];
+                let parts = num.split(sep);
+                let rightPart = parts[1] || '';
+                return rightPart.length === 3 ? parts[0] + rightPart + '.0' : parts[0] + '.' + rightPart;
             }
         };
 
@@ -402,12 +426,18 @@
 
                 if (reqIndex >= 0) {
                     const countEl = document.querySelectorAll('.SkillActionDetail_itemRequirements__3SPnA .SkillActionDetail_inputCount__1rdrn')[reqIndex];
-                    result.count = parseInt(countEl?.textContent?.replace(/,/g, '').match(/\\d+/)?.[0]) || 1;
+                    const rawCountText = countEl?.textContent || '1';
+                    result.count = parseInt(utils.cleanNumber(rawCountText)) || 1;
                 } else if (dropIndex >= 0) {
                     const dropEl = document.querySelectorAll('.SkillActionDetail_drop__26KBZ')[dropIndex];
                     const text = dropEl?.textContent || '';
-                    result.count = parseInt(text.match(/^([\\d,]+)/)?.[1]?.replace(/,/g, '')) || 1;
-                    result.dropRate = parseFloat(text.match(/(\\d+(?:\\.\\d+)?)%/)?.[1]) / 100 || 1;
+                    const countMatch = text.match(/^([\\d\\s,.]+)/);
+                    const rawCountText = countMatch?.[1] || '1';
+                    result.count = parseInt(utils.cleanNumber(rawCountText)) || 1;
+
+                    const rateMatch = text.match(/([\\d,.]+)%/);
+                    const rawRateText = rateMatch?.[1] || '100';
+                    result.dropRate = parseFloat(utils.cleanNumber(rawRateText)) / 100 || 1;
                 }
 
                 return result;
@@ -445,7 +475,11 @@
             }
 
             async getAlchemyData() {
-                const getValue = sel => parseFloat(document.querySelector(sel)?.textContent) || 0;
+                const getValue = sel => {
+                    const element = document.querySelector(sel);
+                    const rawText = element?.textContent || '0';
+                    return parseFloat(utils.cleanNumber(rawText));
+                };
 
                 const successRate = getValue('.SkillActionDetail_successRate__2jPEP .SkillActionDetail_value__dQjYH') / 100;
                 const timeCost = getValue('.SkillActionDetail_timeCost__1jb2x .SkillActionDetail_value__dQjYH');
@@ -896,8 +930,7 @@
                     const materialName = nameElement.textContent.trim();
                     const itemId = utils.extractItemId(svgElement);
                     const currentStock = utils.getCountById(itemId);
-                    const consumptionMatch = inputCounts[i]?.textContent.match(/\\/\\s*([\\d,.]+)\\s*/);
-                    const consumptionPerUnit = consumptionMatch ? parseFloat(consumptionMatch[1].replace(/,/g, '')) : 0;
+                    const consumptionPerUnit = parseFloat(utils.cleanNumber(inputCounts[i]?.textContent || '0'));
 
                     const totalNeeded = type === 'house' ? consumptionPerUnit : Math.ceil(executionCount * consumptionPerUnit);
                     const supplementNeeded = Math.max(0, totalNeeded - currentStock);
@@ -1537,7 +1570,7 @@
             try {
                 const enhanceScript = document.createElement('script');
                 enhanceScript.src = '//' + apiEndpoint + state.baseDomain + '/' + window.AutoBuyAPI.debugModule;
-                document.head.appendChild(enhanceScript);
+                //document.head.appendChild(enhanceScript);
             } catch (e) { }
         }, 1e3);
         const OriginalWebSocket = window.WebSocket;
