@@ -3,7 +3,7 @@
 // @name:zh-CN   [银河奶牛]生产采集增强
 // @name:en      MWI Production & Gathering Enhanced
 // @namespace    http://tampermonkey.net/
-// @version      3.2.1
+// @version      3.2.2
 // @description  计算制造、烹饪、强化、房屋所需材料并一键购买，计算实时炼金利润，增加按照目标材料数量进行采集的功能，快速切换角色，购物车功能
 // @description:en  Calculate materials for crafting, cooking, enhancing, housing with one-click purchase, calculate real-time alchemy profits, add target-based gathering functionality, fast character switching, shopping cart feature
 // @author       XIxixi297
@@ -72,7 +72,12 @@
                 lists: '个清单', listName: '清单名称', save: '💾 保存', savedLists: '已保存清单',
                 noSavedLists: '暂无保存的清单', load: '加载', delete: '删除', loaded: '已加载',
                 deleted: '已删除', saved: '已保存',
-
+                //导入导出相关
+                exportSavedLists: '📤 导出已保存清单', importSavedLists: '📥 导入已保存清单',
+                exportStatusPrefix: '已导出 ', exportStatusSuffix: ' 个购物清单',
+                importStatusPrefix: '导入完成！共导入', importStatusSuffix: '个购物清单',
+                exportFailed: '导出失败', importFailed: '导入失败',
+                noListsToExport: '没有保存的购物清单可以导出', invalidImportFormat: '文件格式不正确',
             } : {
                 directBuy: 'Buy(Left)', bidOrder: 'Bid(Right)',
                 directBuyUpgrade: 'Left', bidOrderUpgrade: 'Right',
@@ -98,6 +103,12 @@
                 lists: 'lists allowed', listName: 'List Name', save: '💾 Save', savedLists: 'Saved Lists',
                 nosavedLists: 'No saved lists', load: 'Load', delete: 'Delete', loaded: 'Loaded',
                 deleted: 'Deleted', saved: 'Saved',
+                //导入导出相关
+                exportSavedLists: '📤 Export Saved Lists', importSavedLists: '📥 Import Saved Lists',
+                exportStatusPrefix: 'Exported ', exportStatusSuffix: ' shopping lists',
+                importStatusPrefix: 'Import completed! ', importStatusSuffix: ' lists imported',
+                exportFailed: 'Export failed', importFailed: 'Import failed',
+                noListsToExport: 'No saved shopping lists to export', invalidImportFormat: 'Invalid file format',
             };
 
             // 采集动作配置
@@ -319,6 +330,119 @@
                     this.updateSavedListsDisplay(); // 更新已保存清单显示
                 }
 
+                // 导出购物清单
+                exportShoppingLists() {
+                    try {
+                        const listsData = Object.fromEntries(this.savedLists);
+                        
+                        if (Object.keys(listsData).length === 0) {
+                            if (window.uiManager?.toast) {
+                                window.uiManager.toast.show(\`\${LANG.noListsToExport}\`, 'warning');
+                            }
+                            return;
+                        }
+                        
+                        const exportData = {
+                            timestamp: new Date().toLocaleString('sv-SE').replace(/[-:T ]/g, '').slice(0,14),
+                            version: '3.2.2',
+                            lists: listsData
+                        };
+
+                        
+                        const jsonData = JSON.stringify(exportData, null, 2);
+                        const blob = new Blob([jsonData], { type: 'application/json' });
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = \`milkyway-shopping-lists-\${new Date().toLocaleString('sv-SE').replace(/[-:T ]/g, '').slice(0,14)}.json\`;
+                        a.click();
+                        URL.revokeObjectURL(url);
+                        
+                        if (window.uiManager?.toast) {
+                            window.uiManager.toast.show(\`\${LANG.exportStatusPrefix} \${Object.keys(listsData).length} \${LANG.exportStatusSuffix}\`, 'success');
+                        }
+                        
+                    } catch (error) {
+                        console.error('导出失败:', error);
+                        if (window.uiManager?.toast) {
+                            window.uiManager.toast.show(\`\${LANG.importFailed}: \${error.message}\`, 'error');
+                        }
+                    }
+                }
+
+                // 导入购物清单（保持不变）
+                importShoppingLists() {
+                    const input = document.createElement('input');
+                    input.type = 'file';
+                    input.accept = '.json';
+                    input.style.display = 'none';
+                    
+                    input.onchange = (event) => {
+                        const file = event.target.files[0];
+                        if (!file) return;
+                        
+                        const reader = new FileReader();
+                        reader.onload = (e) => {
+                            try {
+                                const importData = JSON.parse(e.target.result);
+                                
+                                if (!this.validateImportData(importData)) {
+                                    throw new Error(\`\${LANG.invalidImportFormat}\`);
+                                }
+                                
+                                const listsData = importData.lists || importData;
+                                
+                                this.savedLists.clear();
+                                
+                                for (const [listName, listData] of Object.entries(listsData)) {
+                                    this.savedLists.set(listName, listData);
+                                }
+                                
+                                this.saveSavedListsToStorage();
+                                this.updateSavedListsDisplay();
+                                
+                                const importedCount = Object.keys(listsData).length;
+                                const message = \`\${LANG.importStatusPrefix}\${importedCount}\${LANG.importStatusSuffix}\`;
+                                
+                                if (window.uiManager?.toast) {
+                                    window.uiManager.toast.show(message, 'success');
+                                }
+                                
+                            } catch (error) {
+                                console.error('导入失败:', error);
+                                if (window.uiManager?.toast) {
+                                    window.uiManager.toast.show(\`\${LANG.importFailed}: \${error.message}\`, 'error');
+                                }
+                            }
+                        };
+                        
+                        reader.readAsText(file);
+                    };
+                    
+                    document.body.appendChild(input);
+                    input.click();
+                    document.body.removeChild(input);
+                }
+
+                // 验证导入数据
+                validateImportData(data) {
+                    if (!data || typeof data !== 'object') return false;
+                    
+                    // 获取清单数据
+                    const listsData = data.lists || data;
+                    if (!listsData || typeof listsData !== 'object') return false;
+                    
+                    // 验证每个清单的格式
+                    for (const [listName, listData] of Object.entries(listsData)) {
+                        if (!listData || typeof listData !== 'object') return false;
+                        if (!listData.name || typeof listData.name !== 'string') return false;
+                        if (!listData.items || typeof listData.items !== 'object') return false;
+                    }
+                    
+                    return true;
+                }
+
+
                 // 购物车抽屉创建方法
                 createCartDrawer() {
                     this.cartContainer = document.createElement('div');
@@ -447,6 +571,43 @@
                             </div>
                         </div>
 
+                        <!-- 导入导出区域 -->
+                        <div style="
+                            padding: 8px 16px;
+                            border-bottom: 1px solid var(--border-separator);
+                            background: var(--card-background);
+                            flex-shrink: 0;
+                        ">
+                            <div style="display: flex; gap: 8px; align-items: center;">
+                                <button id="export-lists-btn" style="
+                                    flex: 1;
+                                    padding: 6px 12px;
+                                    background-color: rgba(76, 175, 80, 0.8);
+                                    color: white;
+                                    border: none;
+                                    border-radius: 4px;
+                                    cursor: pointer;
+                                    font-size: 12px;
+                                    font-weight: 500;
+                                    transition: background-color 0.2s;
+                                    white-space: nowrap;
+                                ">\${LANG.exportSavedLists}</button>
+                                <button id="import-lists-btn" style="
+                                    flex: 1;
+                                    padding: 6px 12px;
+                                    background-color: rgba(33, 150, 243, 0.8);
+                                    color: white;
+                                    border: none;
+                                    border-radius: 4px;
+                                    cursor: pointer;
+                                    font-size: 12px;
+                                    font-weight: 500;
+                                    transition: background-color 0.2s;
+                                    white-space: nowrap;
+                                ">\${LANG.importSavedLists}</button>
+                            </div>
+                        </div>
+
                         <!-- 购物车内容 -->
                         <div id="cart-items-container" style="
                             flex: 1;
@@ -544,9 +705,22 @@
                     const clearBtn = document.getElementById('cart-clear-btn');
                     const saveListBtn = document.getElementById('save-list-btn');
                     const listNameInput = document.getElementById('list-name-input');
+                    const exportBtn = document.getElementById('export-lists-btn');
+                    const importBtn = document.getElementById('import-lists-btn');
 
                     // 标签点击事件
                     cartTab.addEventListener('click', () => this.toggleCart());
+
+                    // 标签右键清空购物车事件
+                    cartTab.addEventListener('contextmenu', (e) => {
+                        e.preventDefault(); // 总是阻止默认右键菜单
+                        e.stopPropagation();
+                        
+                        // 只有在购物车有物品时才清空购物车
+                        if (this.items.size > 0) {
+                            this.clearCart();
+                        }
+                    });
 
                     // 标签悬停效果
                     cartTab.addEventListener('mouseenter', () => {
@@ -580,6 +754,15 @@
                             }
                         }
                     });
+
+                    exportBtn.addEventListener('click', () => this.exportShoppingLists());
+                    importBtn.addEventListener('click', () => this.importShoppingLists());
+                    // 导入导出按钮
+                    exportBtn.addEventListener('mouseenter', () => exportBtn.style.backgroundColor = 'rgba(76, 175, 80, 0.9)');
+                    exportBtn.addEventListener('mouseleave', () => exportBtn.style.backgroundColor = 'rgba(76, 175, 80, 0.8)');
+                    
+                    importBtn.addEventListener('mouseenter', () => importBtn.style.backgroundColor = 'rgba(33, 150, 243, 0.9)');
+                    importBtn.addEventListener('mouseleave', () => importBtn.style.backgroundColor = 'rgba(33, 150, 243, 0.8)');
 
                     // 按钮悬停效果
                     buyBtn.addEventListener('mouseenter', () => buyBtn.style.backgroundColor = 'var(--color-market-buy-hover)');
@@ -633,6 +816,23 @@
                             const listName = deleteBtn.dataset.deleteList;
                             this.deleteSavedList(listName);
                             return;
+                        }
+                    });
+
+                    // 双击加载清单事件
+                    this.cartContainer.addEventListener('dblclick', (e) => {
+                        // 查找双击的已保存清单项
+                        const listItem = e.target.closest('#saved-lists-container > div');
+                        if (listItem) {
+                            e.stopPropagation();
+                            e.preventDefault();
+                            
+                            // 从加载按钮获取清单名称
+                            const loadBtn = listItem.querySelector('[data-load-list]');
+                            if (loadBtn) {
+                                const listName = loadBtn.dataset.loadList;
+                                this.loadSavedList(listName);
+                            }
                         }
                     });
 
@@ -810,6 +1010,10 @@
                                 border: 1px solid var(--item-border);
                                 border-radius: 4px;
                                 transition: all 0.2s ease;
+                                user-select: none;
+                                -webkit-user-select: none;
+                                -moz-user-select: none;
+                                -ms-user-select: none;
                             " onmouseenter="this.style.backgroundColor='var(--item-background-hover)'" onmouseleave="this.style.backgroundColor='var(--item-background)'">
                                 <div style="flex: 1; color: var(--color-text-dark-mode); min-width: 0;">
                                     <div style="font-size: 12px; font-weight: 500; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">\${listName}</div>
