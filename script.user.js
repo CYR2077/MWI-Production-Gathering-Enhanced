@@ -3,7 +3,7 @@
 // @name:zh-CN   [银河奶牛]生产采集增强
 // @name:en      MWI Production & Gathering Enhanced
 // @namespace    http://tampermonkey.net/
-// @version      3.2.2
+// @version      3.2.3
 // @description  计算制造、烹饪、强化、房屋所需材料并一键购买，计算实时炼金利润，增加按照目标材料数量进行采集的功能，快速切换角色，购物车功能
 // @description:en  Calculate materials for crafting, cooking, enhancing, housing with one-click purchase, calculate real-time alchemy profits, add target-based gathering functionality, fast character switching, shopping cart feature
 // @author       XIxixi297
@@ -314,20 +314,34 @@
             // 一体化购物车管理器
             class ShoppingCartManager {
                 constructor() {
-                    this.items = new Map(); // itemId -> {name, iconHref, quantity}
+                    this.items = new Map(); // 当前购物车物品:itemId -> {name, iconHref, quantity}
+                    this.savedLists = new Map(); // 保存的清单:listName -> {name, items, savedAt}
                     this.isOpen = false;
                     this.cartContainer = null;
-                    this.savedLists = new Map(); // 保存的清单
-                    this.maxSavedLists = 5; // 最多保存5条清单
+                    this.maxSavedLists = 5;
+                    this.currentListName = ''; // 当前应用的清单名
                     this.init();
                 }
 
                 init() {
                     this.createCartDrawer();
-                    this.loadCartFromStorage();
-                    this.loadSavedListsFromStorage(); // 加载已保存的清单
+                    this.loadCartFromStorage(); // 加载当前购物车
+                    this.loadSavedListsFromStorage(); // 加载保存的清单
                     this.updateCartBadge();
-                    this.updateSavedListsDisplay(); // 更新已保存清单显示
+                    this.updateSavedListsDisplay();
+
+                    // 确保 DOM 元素已创建后再更新显示
+                    setTimeout(() => {
+                        this.updateCartBadge();
+                        this.updateCartDisplay();
+                        this.updateSavedListsDisplay();
+                        
+                        // 同步输入框
+                        const listNameInput = document.getElementById('list-name-input');
+                        if (listNameInput) {
+                            listNameInput.value = this.currentListName;
+                        }
+                    }, 0);
                 }
 
                 // 导出购物清单
@@ -695,6 +709,13 @@
 
                     this.bindEvents();
                     this.updateCartDisplay();
+
+                    setTimeout(() => {
+                        const listNameInput = document.getElementById('list-name-input');
+                        if (listNameInput) {
+                            listNameInput.value = this.currentListName;
+                        }
+                    }, 0);
                 }
 
                 // 绑定事件
@@ -719,6 +740,14 @@
                         // 只有在购物车有物品时才清空购物车
                         if (this.items.size > 0) {
                             this.clearCart();
+                        }
+                    });
+
+                    listNameInput.addEventListener('input', (e) => {
+                        const inputValue = e.target.value.trim();
+                        if (inputValue !== this.currentListName) {
+                            this.currentListName = inputValue;
+                            this.saveCartToStorage();
                         }
                     });
 
@@ -899,15 +928,26 @@
                         return false;
                     }
 
-                    // 保存清单
+                    // 深拷贝当前购物车数据保存为清单
                     const listData = {
                         name: listName.trim(),
-                        items: Object.fromEntries(this.items),
+                        items: {},
                         savedAt: Date.now()
                     };
+                    
+                    // 深拷贝items
+                    for (const [itemId, itemData] of this.items) {
+                        listData.items[itemId] = {
+                            name: itemData.name,
+                            iconHref: itemData.iconHref,
+                            quantity: itemData.quantity
+                        };
+                    }
 
                     this.savedLists.set(listName, listData);
+                    this.currentListName = listName; // 记录当前应用的清单名
                     this.saveSavedListsToStorage();
+                    this.saveCartToStorage(); // 保存当前购物车状态
                     this.updateSavedListsDisplay();
 
                     if (window.uiManager?.toast) {
@@ -924,12 +964,25 @@
                     // 清空当前购物车
                     this.items.clear();
                     
-                    // 加载保存的清单
+                    // 深拷贝保存的清单数据到当前购物车
                     for (const [itemId, itemData] of Object.entries(listData.items)) {
-                        this.items.set(itemId, itemData);
+                        this.items.set(itemId, {
+                            name: itemData.name,
+                            iconHref: itemData.iconHref,
+                            quantity: itemData.quantity
+                        });
                     }
 
-                    this.saveCartToStorage();
+                    // 设置当前清单名称
+                    this.currentListName = listName;
+                    
+                    // 同步到输入框
+                    const listNameInput = document.getElementById('list-name-input');
+                    if (listNameInput) {
+                        listNameInput.value = listName;
+                    }
+
+                    this.saveCartToStorage(); // 保存当前购物车状态
                     this.updateCartBadge();
                     this.updateCartDisplay();
 
@@ -956,7 +1009,14 @@
                 // 保存已保存清单到localStorage
                 saveSavedListsToStorage() {
                     try {
-                        const listsData = Object.fromEntries(this.savedLists);
+                        const listsData = {};
+                        for (const [listName, listData] of this.savedLists) {
+                            listsData[listName] = {
+                                name: listData.name,
+                                items: { ...listData.items }, // 深拷贝items
+                                savedAt: listData.savedAt
+                            };
+                        }
                         localStorage.setItem('milkyway-shopping-lists', JSON.stringify(listsData));
                     } catch (error) {
                         console.warn('保存购物清单失败:', error);
@@ -1164,6 +1224,14 @@
                     if (this.items.size === 0) return;
 
                     this.items.clear();
+                    this.currentListName = '';
+                    
+                    // 清空输入框
+                    const listNameInput = document.getElementById('list-name-input');
+                    if (listNameInput) {
+                        listNameInput.value = '';
+                    }
+
                     this.saveCartToStorage();
                     this.updateCartBadge();
                     this.updateCartDisplay();
@@ -1371,21 +1439,32 @@
                 // 保存到本地存储（当前购物车内容）
                 saveCartToStorage() {
                     try {
-                        const cartData = Object.fromEntries(this.items);
-                        window.cartStorageData = cartData;
+                        const cartData = {
+                            items: Object.fromEntries(this.items),
+                            currentListName: this.currentListName
+                        };
+                        localStorage.setItem('milkyway-current-cart', JSON.stringify(cartData));
                     } catch (error) {
-                        console.warn('保存购物车数据失败:', error);
+                        console.warn('保存当前购物车失败:', error);
                     }
                 }
 
                 // 从本地存储加载（当前购物车内容）
                 loadCartFromStorage() {
                     try {
-                        const cartData = window.cartStorageData || {};
-                        this.items = new Map(Object.entries(cartData));
+                        const cartData = JSON.parse(localStorage.getItem('milkyway-current-cart') || '{}');
+                        this.items = new Map(Object.entries(cartData.items || {}));
+                        this.currentListName = cartData.currentListName || '';
+                        
+                        // 同步输入框
+                        const listNameInput = document.getElementById('list-name-input');
+                        if (listNameInput) {
+                            listNameInput.value = this.currentListName;
+                        }
                     } catch (error) {
-                        console.warn('加载购物车数据失败:', error);
+                        console.warn('加载当前购物车失败:', error);
                         this.items = new Map();
+                        this.currentListName = '';
                     }
                 }
 
