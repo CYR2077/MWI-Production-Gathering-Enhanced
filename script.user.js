@@ -3,7 +3,7 @@
 // @name:zh-CN   [银河奶牛]生产采集增强
 // @name:en      MWI Production & Gathering Enhanced
 // @namespace    http://tampermonkey.net/
-// @version      3.2.0
+// @version      3.2.1
 // @description  计算制造、烹饪、强化、房屋所需材料并一键购买，计算实时炼金利润，增加按照目标材料数量进行采集的功能，快速切换角色，购物车功能
 // @description:en  Calculate materials for crafting, cooking, enhancing, housing with one-click purchase, calculate real-time alchemy profits, add target-based gathering functionality, fast character switching, shopping cart feature
 // @author       XIxixi297
@@ -64,10 +64,15 @@
                 // 购物车相关
                 addToCart: '加入购物车', add: '已添加', toCart: '到购物车',
                 shoppingCart: '购物车', cartEmpty: '购物车是空的',
-                cartDirectBuy: '批量直购', cartBidOrder: '批量求购', cartClear: '清空购物车',
+                cartDirectBuy: '批量直购(左一)', cartBidOrder: '批量求购(右一)', cartClear: '清空购物车',
                 cartRemove: '移除', cartQuantity: '数量', cartItem: '项',
                 noMaterialsNeeded: '没有需要补充的材料', addToCartFailed: '添加失败，请稍后重试',
-                cartClearSuccess: '已清空购物车',
+                cartClearSuccess: '已清空购物车', pleaseEnterListName: '请输入清单名称',
+                cartEmptyCannotSave: '购物车为空，无法保存', maxListsLimit: '最多只能保存',
+                lists: '个清单', listName: '清单名称', save: '💾 保存', savedLists: '已保存清单',
+                noSavedLists: '暂无保存的清单', load: '加载', delete: '删除', loaded: '已加载',
+                deleted: '已删除', saved: '已保存',
+
             } : {
                 directBuy: 'Buy(Left)', bidOrder: 'Bid(Right)',
                 directBuyUpgrade: 'Left', bidOrderUpgrade: 'Right',
@@ -88,7 +93,11 @@
                 cartDirectBuy: 'Batch Buy', cartBidOrder: 'Batch Bid', cartClear: 'Clear Cart',
                 cartRemove: 'Remove', cartQuantity: 'Quantity', cartItem: 'items',
                 noMaterialsNeeded: 'No materials need to be supplemented', addToCartFailed: 'Add failed, please try again later',
-                cartClearSuccess: 'Cart cleared'
+                cartClearSuccess: 'Cart cleared', pleaseEnterListName: 'Please enter list name',
+                cartEmptyCannotSave: 'Cart is empty, cannot save', maxListsLimit: 'Maximum',
+                lists: 'lists allowed', listName: 'List Name', save: '💾 Save', savedLists: 'Saved Lists',
+                nosavedLists: 'No saved lists', load: 'Load', delete: 'Delete', loaded: 'Loaded',
+                deleted: 'Deleted', saved: 'Saved',
             };
 
             // 采集动作配置
@@ -297,16 +306,20 @@
                     this.items = new Map(); // itemId -> {name, iconHref, quantity}
                     this.isOpen = false;
                     this.cartContainer = null;
+                    this.savedLists = new Map(); // 保存的清单
+                    this.maxSavedLists = 5; // 最多保存5条清单
                     this.init();
                 }
 
                 init() {
                     this.createCartDrawer();
                     this.loadCartFromStorage();
+                    this.loadSavedListsFromStorage(); // 加载已保存的清单
                     this.updateCartBadge();
+                    this.updateSavedListsDisplay(); // 更新已保存清单显示
                 }
 
-                // 购物车抽屉创建方法（修改部分）
+                // 购物车抽屉创建方法
                 createCartDrawer() {
                     this.cartContainer = document.createElement('div');
                     this.cartContainer.id = 'shopping-cart-drawer';
@@ -315,8 +328,8 @@
                         position: 'fixed',
                         top: '80px',
                         right: '0',
-                        width: '360px',
-                        height: '70vh', // 固定高度，避免随内容变化
+                        width: '380px',
+                        height: '75vh',
                         backgroundColor: 'rgba(42, 43, 66, 0.95)',
                         border: '1px solid var(--border)',
                         borderRight: 'none',
@@ -325,7 +338,7 @@
                         backdropFilter: 'blur(10px)',
                         boxShadow: '-4px 0 20px rgba(0,0,0,0.3)',
                         zIndex: '9999',
-                        transform: 'translateX(360px)', // 完全隐藏，只露出标签
+                        transform: 'translateX(380px)', // 调整隐藏位置
                         transition: 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
                         display: 'flex',
                         flexDirection: 'column',
@@ -353,7 +366,6 @@
                             cursor: pointer;
                             transition: all 0.3s ease;
                             box-shadow: -2px 0 8px rgba(0,0,0,0.2);
-                            user-select: none;
                         ">
                             <div style="
                                 font-size: 18px;
@@ -380,7 +392,7 @@
                             display: flex;
                             justify-content: space-between;
                             align-items: center;
-                            padding: 16px;
+                            padding: 12px 16px;
                             border-bottom: 1px solid var(--border-separator);
                             background: var(--card-title-background);
                             border-top-left-radius: 8px;
@@ -402,17 +414,75 @@
                             " id="cart-count-display">0 项</div>
                         </div>
 
+                        <!-- 保存清单区域 -->
+                        <div style="
+                            padding: 12px 16px;
+                            border-bottom: 1px solid var(--border-separator);
+                            background: var(--card-background);
+                            flex-shrink: 0;
+                        ">
+                            <div style="display: flex; gap: 8px; align-items: center;">
+                                <input id="list-name-input" type="text" placeholder=\${LANG.listName} maxlength="20" style="
+                                    flex: 1;
+                                    padding: 6px 8px;
+                                    background-color: var(--item-background);
+                                    border: 1px solid var(--item-border);
+                                    border-radius: 4px;
+                                    color: var(--color-text-dark-mode);
+                                    font-size: 12px;
+                                    outline: none;
+                                ">
+                                <button id="save-list-btn" style="
+                                    padding: 6px 12px;
+                                    background-color: rgba(33, 150, 243, 0.8);
+                                    color: white;
+                                    border: none;
+                                    border-radius: 4px;
+                                    cursor: pointer;
+                                    font-size: 12px;
+                                    font-weight: 500;
+                                    transition: background-color 0.2s;
+                                    white-space: nowrap;
+                                ">\${LANG.save}</button>
+                            </div>
+                        </div>
+
                         <!-- 购物车内容 -->
                         <div id="cart-items-container" style="
                             flex: 1;
                             overflow-y: auto;
                             padding: 8px;
                             background: var(--card-background);
+                            min-height: 0;
                         "></div>
+
+                        <!-- 已保存清单 -->
+                        <div style="
+                            border-top: 1px solid var(--border-separator);
+                            background: var(--card-background);
+                            flex-shrink: 0;
+                            max-height: 200px;
+                            display: flex;
+                            flex-direction: column;
+                        ">
+                            <div style="
+                                padding: 8px 16px;
+                                font-size: 12px;
+                                font-weight: 500;
+                                color: var(--color-neutral-400);
+                                border-bottom: 1px solid var(--border-separator);
+                            ">\${LANG.savedLists}</div>
+                            <div id="saved-lists-container" style="
+                                flex: 1;
+                                overflow-y: auto;
+                                padding: 8px;
+                                min-height: 0;
+                            "></div>
+                        </div>
 
                         <!-- 购物车操作按钮 -->
                         <div id="cart-actions" style="
-                            padding: 16px;
+                            padding: 12px 16px;
                             border-top: 1px solid var(--border-separator);
                             background: var(--card-background);
                             border-bottom-left-radius: 8px;
@@ -462,7 +532,6 @@
 
                     document.body.appendChild(this.cartContainer);
 
-                    // 绑定事件
                     this.bindEvents();
                     this.updateCartDisplay();
                 }
@@ -473,6 +542,8 @@
                     const buyBtn = document.getElementById('cart-buy-btn');
                     const bidBtn = document.getElementById('cart-bid-btn');
                     const clearBtn = document.getElementById('cart-clear-btn');
+                    const saveListBtn = document.getElementById('save-list-btn');
+                    const listNameInput = document.getElementById('list-name-input');
 
                     // 标签点击事件
                     cartTab.addEventListener('click', () => this.toggleCart());
@@ -492,7 +563,25 @@
                     bidBtn.addEventListener('click', () => this.batchPurchase(true));
                     clearBtn.addEventListener('click', () => this.clearCart());
 
-                    // 按钮悬停效果（保持不变）
+                    // 保存清单事件
+                    saveListBtn.addEventListener('click', () => {
+                        const listName = listNameInput.value.trim();
+                        if (this.saveCurrentList(listName)) {
+                            listNameInput.value = '';
+                        }
+                    });
+
+                    // 输入框回车保存
+                    listNameInput.addEventListener('keypress', (e) => {
+                        if (e.key === 'Enter') {
+                            const listName = listNameInput.value.trim();
+                            if (this.saveCurrentList(listName)) {
+                                listNameInput.value = '';
+                            }
+                        }
+                    });
+
+                    // 按钮悬停效果
                     buyBtn.addEventListener('mouseenter', () => buyBtn.style.backgroundColor = 'var(--color-market-buy-hover)');
                     buyBtn.addEventListener('mouseleave', () => buyBtn.style.backgroundColor = 'var(--color-market-buy)');
                     
@@ -510,32 +599,48 @@
                         clearBtn.style.color = 'var(--color-neutral-400)';
                     });
 
-                    // ========== 新增：使用事件委托处理购物车内的所有点击事件 ==========
+                    saveListBtn.addEventListener('mouseenter', () => saveListBtn.style.backgroundColor = 'rgba(33, 150, 243, 0.9)');
+                    saveListBtn.addEventListener('mouseleave', () => saveListBtn.style.backgroundColor = 'rgba(33, 150, 243, 0.8)');
+
+                    // 输入框聚焦效果
+                    listNameInput.addEventListener('focus', () => listNameInput.style.borderColor = 'var(--color-primary)');
+                    listNameInput.addEventListener('blur', () => listNameInput.style.borderColor = 'var(--item-border)');
+
+                    // 购物车内容事件委托
                     this.cartContainer.addEventListener('click', (e) => {
                         // 处理删除按钮点击
                         const removeBtn = e.target.closest('[data-remove-item]');
                         if (removeBtn) {
-                            e.stopPropagation(); // 阻止事件冒泡到document
+                            e.stopPropagation();
                             const itemId = removeBtn.dataset.removeItem;
                             this.removeItem(itemId);
                             return;
                         }
 
-                        // 处理数量输入框的变化（虽然这里是click事件，但可以统一管理）
-                        const quantityInput = e.target.closest('input[data-item-id]');
-                        if (quantityInput) {
-                            e.stopPropagation(); // 阻止事件冒泡
+                        // 处理加载清单按钮
+                        const loadBtn = e.target.closest('[data-load-list]');
+                        if (loadBtn) {
+                            e.stopPropagation();
+                            const listName = loadBtn.dataset.loadList;
+                            this.loadSavedList(listName);
+                            return;
+                        }
+
+                        // 处理删除清单按钮
+                        const deleteBtn = e.target.closest('[data-delete-list]');
+                        if (deleteBtn) {
+                            e.stopPropagation();
+                            const listName = deleteBtn.dataset.deleteList;
+                            this.deleteSavedList(listName);
                             return;
                         }
                     });
 
-                    // ========== 新增：使用事件委托处理输入事件 ==========
+                    // 数量输入处理
                     this.cartContainer.addEventListener('input', (e) => {
                         if (e.target.matches('input[data-item-id]')) {
                             const itemId = e.target.dataset.itemId;
                             let value = e.target.value;
-                            
-                            // 如果长度超过12位，截断
                             if (value.length > 12) {
                                 e.target.value = value.slice(0, 12);
                             }
@@ -546,51 +651,215 @@
                         if (e.target.matches('input[data-item-id]')) {
                             const itemId = e.target.dataset.itemId;
                             let quantity = parseInt(e.target.value) || 1;
-                            
-                            // 确保为正整数，最多12位
                             if (quantity < 1) quantity = 1;
                             if (quantity > 999999999999) quantity = 999999999999;
-                            
                             e.target.value = quantity;
                             this.updateItemQuantity(itemId, quantity);
                         }
                     });
 
-                    this.cartContainer.addEventListener('keypress', (e) => {
-                        if (e.target.matches('input[data-item-id]')) {
-                            // 只允许数字键
-                            if (!/[0-9]/.test(e.key) && !['Backspace', 'Delete', 'ArrowLeft', 'ArrowRight', 'Tab'].includes(e.key)) {
-                                e.preventDefault();
-                            }
-                        }
-                    });
+                    // 外部点击关闭
+                    let mouseDownTarget = null;
 
-                    this.cartContainer.addEventListener('focus', (e) => {
-                        if (e.target.matches('input[data-item-id]')) {
-                            e.target.style.borderColor = 'var(--color-primary)';
-                            e.target.select();
-                        }
-                    }, true); // 使用捕获阶段
+                    document.addEventListener('mousedown', (e) => {
+                        mouseDownTarget = e.target;
+                    }, true);
 
-                    this.cartContainer.addEventListener('blur', (e) => {
-                        if (e.target.matches('input[data-item-id]')) {
-                            e.target.style.borderColor = 'var(--item-border)';
-                            // 确保值有效，如果为空或0则设为1
-                            let value = parseInt(e.target.value);
-                            if (!value || value < 1) {
-                                e.target.value = 1;
-                                // 触发change事件更新数据
-                                e.target.dispatchEvent(new Event('change'));
-                            }
-                        }
-                    }, true); // 使用捕获阶段
-
-                    // ========== 简化后的外部点击关闭逻辑 ==========
                     document.addEventListener('click', (e) => {
-                        if (this.isOpen && !this.cartContainer.contains(e.target)) {
+                        if (this.isOpen && 
+                            !this.cartContainer.contains(e.target) && 
+                            !this.cartContainer.contains(mouseDownTarget)) {
                             this.closeCart();
                         }
-                    },true);
+                        mouseDownTarget = null;
+                    }, true);
+                }
+
+                // 保存当前清单
+                saveCurrentList(listName) {
+                    if (!listName || listName.trim().length === 0) {
+                        if (window.uiManager?.toast) {
+                            window.uiManager.toast.show(\`\${LANG.pleaseEnterListName}\`, 'warning');
+                        }
+                        return false;
+                    }
+                    
+                    if (this.items.size === 0) {
+                        if (window.uiManager?.toast) {
+                            window.uiManager.toast.show(\`\${LANG.cartEmptyCannotSave}\`, 'warning');
+                        }
+                        return false;
+                    }
+
+                    // 检查是否超过最大数量
+                    if (this.savedLists.size >= this.maxSavedLists && !this.savedLists.has(listName)) {
+                        if (window.uiManager?.toast) {
+                            window.uiManager.toast.show(\`\${LANG.maxListsLimit}\${this.maxSavedLists}\${LANG.lists}\`, 'warning');
+                        }
+                        return false;
+                    }
+
+                    // 保存清单
+                    const listData = {
+                        name: listName.trim(),
+                        items: Object.fromEntries(this.items),
+                        savedAt: Date.now()
+                    };
+
+                    this.savedLists.set(listName, listData);
+                    this.saveSavedListsToStorage();
+                    this.updateSavedListsDisplay();
+
+                    if (window.uiManager?.toast) {
+                        window.uiManager.toast.show(\`"\${listName}"\${LANG.saved}\`, 'success');
+                    }
+                    return true;
+                }
+
+                // 加载已保存的清单
+                loadSavedList(listName) {
+                    const listData = this.savedLists.get(listName);
+                    if (!listData) return false;
+
+                    // 清空当前购物车
+                    this.items.clear();
+                    
+                    // 加载保存的清单
+                    for (const [itemId, itemData] of Object.entries(listData.items)) {
+                        this.items.set(itemId, itemData);
+                    }
+
+                    this.saveCartToStorage();
+                    this.updateCartBadge();
+                    this.updateCartDisplay();
+
+                    if (window.uiManager?.toast) {
+                        window.uiManager.toast.show(\`"\${listName}"\${LANG.loaded}\`, 'success');
+                    }
+                    return true;
+                }
+
+                // 删除已保存的清单
+                deleteSavedList(listName) {
+                    if (this.savedLists.delete(listName)) {
+                        this.saveSavedListsToStorage();
+                        this.updateSavedListsDisplay();
+                        
+                        if (window.uiManager?.toast) {
+                            window.uiManager.toast.show(\`"\${listName}"\${LANG.deleted}\`, 'success');
+                        }
+                        return true;
+                    }
+                    return false;
+                }
+
+                // 保存已保存清单到localStorage
+                saveSavedListsToStorage() {
+                    try {
+                        const listsData = Object.fromEntries(this.savedLists);
+                        localStorage.setItem('milkyway-shopping-lists', JSON.stringify(listsData));
+                    } catch (error) {
+                        console.warn('保存购物清单失败:', error);
+                    }
+                }
+
+                // 从localStorage加载已保存清单
+                loadSavedListsFromStorage() {
+                    try {
+                        const listsData = JSON.parse(localStorage.getItem('milkyway-shopping-lists') || '{}');
+                        this.savedLists = new Map(Object.entries(listsData));
+                    } catch (error) {
+                        console.warn('加载购物清单失败:', error);
+                        this.savedLists = new Map();
+                    }
+                }
+
+                // 更新已保存清单显示
+                updateSavedListsDisplay() {
+                    const container = document.getElementById('saved-lists-container');
+                    if (!container) return;
+
+                    if (this.savedLists.size === 0) {
+                        container.innerHTML = \`
+                            <div style="
+                                text-align: center;
+                                color: var(--color-neutral-400);
+                                padding: 20px;
+                                font-style: italic;
+                                font-size: 12px;
+                            ">\${LANG.noSavedLists}</div>
+                        \`;
+                        return;
+                    }
+
+                    let html = '';
+                    // 按保存时间排序，最新的在前
+                    const sortedLists = Array.from(this.savedLists.entries())
+                        .sort((a, b) => b[1].savedAt - a[1].savedAt);
+
+                    for (const [listName, listData] of sortedLists) {
+                        const itemCount = Object.keys(listData.items).length;
+                        
+                        html += \`
+                            <div style="
+                                display: flex;
+                                align-items: center;
+                                padding: 8px;
+                                margin-bottom: 6px;
+                                background-color: var(--item-background);
+                                border: 1px solid var(--item-border);
+                                border-radius: 4px;
+                                transition: all 0.2s ease;
+                            " onmouseenter="this.style.backgroundColor='var(--item-background-hover)'" onmouseleave="this.style.backgroundColor='var(--item-background)'">
+                                <div style="flex: 1; color: var(--color-text-dark-mode); min-width: 0;">
+                                    <div style="font-size: 12px; font-weight: 500; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">\${listName}</div>
+                                    <div style="font-size: 10px; color: var(--color-neutral-400);">\${itemCount}\${LANG.cartItem}</div>
+                                </div>
+                                <div style="display: flex; gap: 6px; flex-shrink: 0;">
+                                    <button
+                                        data-load-list="\${listName}"
+                                        style="
+                                            background: rgba(76, 175, 80, 0.8);
+                                            color: white;
+                                            border: none;
+                                            border-radius: 4px;
+                                            cursor: pointer;
+                                            padding: 6px 10px;
+                                            font-size: 11px;
+                                            font-weight: 500;
+                                            transition: background-color 0.2s;
+                                            line-height: 1;
+                                            white-space: nowrap;
+                                        "
+                                        title="加载清单"
+                                        onmouseenter="this.style.backgroundColor='rgba(76, 175, 80, 0.9)'"
+                                        onmouseleave="this.style.backgroundColor='rgba(76, 175, 80, 0.8)'"
+                                    >\${LANG.load}</button>
+                                    <button
+                                        data-delete-list="\${listName}"
+                                        style="
+                                            background: rgba(244, 67, 54, 0.8);
+                                            color: white;
+                                            border: none;
+                                            border-radius: 4px;
+                                            cursor: pointer;
+                                            padding: 6px 10px;
+                                            font-size: 11px;
+                                            font-weight: 500;
+                                            transition: background-color 0.2s;
+                                            line-height: 1;
+                                            white-space: nowrap;
+                                        "
+                                        title="删除清单"
+                                        onmouseenter="this.style.backgroundColor='rgba(244, 67, 54, 0.9)'"
+                                        onmouseleave="this.style.backgroundColor='rgba(244, 67, 54, 0.8)'"
+                                    >\${LANG.delete}</button>
+                                </div>
+                            </div>
+                        \`;
+                    }
+
+                    container.innerHTML = html;
                 }
 
                 // 切换购物车状态
@@ -602,28 +871,28 @@
                     }
                 }
 
-                // 打开购物车（修改）
+                // 打开购物车
                 openCart() {
                     if (this.isOpen) return;
                     this.cartContainer.style.transform = 'translateX(0)';
                     this.isOpen = true;
                 }
 
-                // 关闭购物车（修改）
+                // 关闭购物车
                 closeCart() {
                     if (!this.isOpen) return;
-                    this.cartContainer.style.transform = 'translateX(360px)'; // 完全隐藏
+                    this.cartContainer.style.transform = 'translateX(380px)';
                     this.isOpen = false;
                 }
 
-                // 更新购物车徽章 - 修改为显示物品种类数
+                // 更新购物车徽章
                 updateCartBadge() {
                     const tabBadge = document.getElementById('cart-tab-badge');
                     const countDisplay = document.getElementById('cart-count-display');
                     
                     if (!tabBadge || !countDisplay) return;
 
-                    const itemTypeCount = this.items.size; // 物品种类数
+                    const itemTypeCount = this.items.size;
                     
                     if (itemTypeCount > 0) {
                         tabBadge.textContent = itemTypeCount > 99 ? '99+' : itemTypeCount.toString();
@@ -633,11 +902,6 @@
                         tabBadge.style.display = 'none';
                         countDisplay.textContent = \`0 \${LANG.cartItem}\`;
                     }
-                }
-
-                // 获取总物品数量
-                getTotalItems() {
-                    return Array.from(this.items.values()).reduce((sum, item) => sum + item.quantity, 0);
                 }
 
                 // 添加物品到购物车
@@ -659,7 +923,6 @@
                     this.updateCartBadge();
                     this.updateCartDisplay();
 
-                    // 显示通知
                     if (window.uiManager?.toast) {
                         window.uiManager.toast.show(\`\${LANG.add} \${itemInfo.name} x\${quantity} \${LANG.toCart}\`, 'success', 2000);
                     }
@@ -694,20 +957,13 @@
 
                 // 清空购物车
                 clearCart() {
-                    if (this.items.size === 0) {
-                        return;
-                    }
+                    if (this.items.size === 0) return;
 
-                    // 记录清空前的物品数量，用于通知
-                    const itemCount = this.items.size;
-                    
-                    // 直接清空，不再弹窗确认
                     this.items.clear();
                     this.saveCartToStorage();
                     this.updateCartBadge();
                     this.updateCartDisplay();
                     
-                    // 显示清空成功的通知
                     if (window.uiManager?.toast) {
                         window.uiManager.toast.show(\`\${LANG.cartClearSuccess}\`, 'success', 3000);
                     }
@@ -762,11 +1018,11 @@
                                         <use href="/static/media/items_sprite.6d12eb9d.svg\${item.iconHref}"></use>
                                     </svg>
                                 </div>
-                                <div style="flex: 1; color: var(--color-text-dark-mode);">
-                                    <div style="font-size: 13px; font-weight: 500; margin-bottom: 2px;">\${item.name}</div>
+                                <div style="flex: 1; color: var(--color-text-dark-mode); min-width: 0;">
+                                    <div style="font-size: 13px; font-weight: 500; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">\${item.name}</div>
                                     <div style="font-size: 11px; color: var(--color-neutral-400);">\${LANG.cartQuantity}: \${item.quantity}</div>
                                 </div>
-                                <div style="display: flex; align-items: center; gap: 8px;">
+                                <div style="display: flex; align-items: center; gap: 8px; flex-shrink: 0;">
                                     <input
                                         type="number"
                                         value="\${item.quantity}"
@@ -801,6 +1057,7 @@
                                             display: flex;
                                             align-items: center;
                                             justify-content: center;
+                                            flex-shrink: 0;
                                         "
                                         title="\${LANG.cartRemove}"
                                         onmouseenter="this.style.backgroundColor='rgba(244, 67, 54, 0.2)'"
@@ -823,23 +1080,19 @@
                         return;
                     }
 
-                    // 获取按钮元素
                     const buyBtn = document.getElementById('cart-buy-btn');
                     const bidBtn = document.getElementById('cart-bid-btn');
                     const clearBtn = document.getElementById('cart-clear-btn');
                     
-                    // 保存原始状态
                     const originalBuyText = buyBtn.textContent;
                     const originalBidText = bidBtn.textContent;
                     const originalBuyBg = buyBtn.style.backgroundColor;
                     const originalBidBg = bidBtn.style.backgroundColor;
                     
-                    // 禁用所有按钮
                     buyBtn.disabled = true;
                     bidBtn.disabled = true;
                     clearBtn.disabled = true;
                     
-                    // 设置按钮状态
                     if (isBidOrder) {
                         bidBtn.textContent = LANG.submitting;
                         bidBtn.style.backgroundColor = CONFIG.COLORS.disabled;
@@ -850,7 +1103,6 @@
                         buyBtn.style.cursor = 'not-allowed';
                     }
                     
-                    // 其他按钮也设为禁用状态
                     const otherBtn = isBidOrder ? buyBtn : bidBtn;
                     otherBtn.style.backgroundColor = CONFIG.COLORS.disabled;
                     otherBtn.style.cursor = 'not-allowed';
@@ -863,7 +1115,7 @@
                         itemHrid: itemId.startsWith('/items/') ? itemId : \`/items/\${itemId}\`,
                         quantity: item.quantity,
                         materialName: item.name,
-                        cartItemId: itemId // 添加购物车物品ID，用于后续移除
+                        cartItemId: itemId
                     }));
 
                     try {
@@ -876,17 +1128,14 @@
                                 window.uiManager.processResults(results, isBidOrder, 'cart');
                             }
 
-                            // ===== 关键修改：只移除成功购买的物品 =====
                             let successfulRemovals = 0;
                             results.forEach(result => {
                                 if (result.success && result.item.cartItemId) {
-                                    // 只移除成功购买的物品
                                     this.items.delete(result.item.cartItemId);
                                     successfulRemovals++;
                                 }
                             });
 
-                            // 如果有成功的操作，更新购物车显示
                             if (successfulRemovals > 0) {
                                 this.saveCartToStorage();
                                 this.updateCartBadge();
@@ -898,7 +1147,6 @@
                             window.uiManager.toast.show(\`\${LANG.error}: \${error.message}\`, 'error');
                         }
                     } finally {
-                        // 恢复按钮状态
                         buyBtn.disabled = false;
                         bidBtn.disabled = false;
                         clearBtn.disabled = false;
@@ -916,26 +1164,17 @@
                     }
                 }
 
-                // 静默清空购物车（不询问确认）
-                clearCartSilent() {
-                    this.items.clear();
-                    this.saveCartToStorage();
-                    this.updateCartBadge();
-                    this.updateCartDisplay();
-                }
-
-                // 保存到本地存储
+                // 保存到本地存储（当前购物车内容）
                 saveCartToStorage() {
                     try {
                         const cartData = Object.fromEntries(this.items);
-                        // 使用内存存储而不是localStorage
                         window.cartStorageData = cartData;
                     } catch (error) {
                         console.warn('保存购物车数据失败:', error);
                     }
                 }
 
-                // 从本地存储加载
+                // 从本地存储加载（当前购物车内容）
                 loadCartFromStorage() {
                     try {
                         const cartData = window.cartStorageData || {};
@@ -946,14 +1185,13 @@
                     }
                 }
 
-                // 创建添加到购物车按钮（使用统一样式）
+                // 创建添加到购物车按钮
                 createAddAllToCartButton(type) {
                     const btn = document.createElement('button');
                     btn.textContent = LANG.addToCart;
                     btn.className = 'unified-action-btn add-to-cart-btn';
                     btn.setAttribute('data-button-type', 'add-to-cart');
 
-                    // 使用统一样式
                     this.applyUnifiedButtonStyle(btn, 'add-to-cart');
 
                     btn.addEventListener('click', async (e) => {
@@ -967,7 +1205,6 @@
 
                 // 应用统一按钮样式
                 applyUnifiedButtonStyle(btn, buttonType) {
-                    // 定义按钮类型配置
                     const buttonConfigs = {
                         'direct-buy': {
                             backgroundColor: 'rgba(47, 196, 167, 0.8)',
@@ -1004,10 +1241,8 @@
                         whiteSpace: 'nowrap',
                         textOverflow: 'ellipsis',
                         overflow: 'hidden',
-                        userSelect: 'none'
                     });
 
-                    // 添加悬浮效果
                     btn.addEventListener('mouseenter', () => {
                         btn.style.backgroundColor = config.hoverColor;
                     });
@@ -1016,14 +1251,13 @@
                     });
                 }
 
-                // 添加所有需要的材料到购物车（修改以支持升级物品）
+                // 添加所有需要的材料到购物车
                 async addAllNeededToCart(type) {
                     try {
                         const requirements = await MaterialCalculator.calculateRequirements(type);
                         let addedCount = 0;
 
                         for (const requirement of requirements) {
-                            // 处理材料和升级物品
                             if (requirement.supplementNeeded > 0 && requirement.itemId && !requirement.itemId.includes('coin')) {
                                 const itemInfo = {
                                     name: requirement.materialName,
@@ -1042,13 +1276,13 @@
                             }
                         } else {
                             if (window.uiManager?.toast) {
-                                window.uiManager.toast.show('没有需要补充的材料', 'info', 2000);
+                                window.uiManager.toast.show(\`\${LANG.noMaterialsNeeded}\`, 'info', 2000);
                             }
                         }
                     } catch (error) {
                         console.error('添加所需材料到购物车失败:', error);
                         if (window.uiManager?.toast) {
-                            window.uiManager.toast.show('添加失败，请稍后重试', 'error');
+                            window.uiManager.toast.show(\`\${LANG.addToCartFailed}\`, 'error');
                         }
                     }
                 }
@@ -1775,6 +2009,7 @@
                 }
 
                 async init() {
+                    addGlobalButtonStyles();
                     await utils.delay(1000);
                     await this.checkLoggerAndInit();
                     this.setupEasterEgg();
@@ -2192,7 +2427,7 @@
                 setupButtons(panel, selectors, config, type) {
                     if (panel.querySelector('.buy-buttons-container')) return;
 
-                    // 创建主要按钮容器（包含直购、求购和购物车三个按钮并排）
+                    // 创建主要按钮容器（包含直购、求购和购物车三个按钮）
                     const materialButtonContainer = document.createElement('div');
                     materialButtonContainer.className = 'buy-buttons-container';
 
@@ -2206,11 +2441,11 @@
 
                     // 使用统一按钮创建方法
                     const directBuyBtn = this.createUnifiedButton(LANG.directBuy, () => this.purchaseMaterials(type, false), 'direct-buy');
-                    const bidOrderBtn = this.createUnifiedButton(LANG.bidOrder, () => this.purchaseMaterials(type, true), 'bid-order');
                     const addToCartBtn = this.shoppingCart.createAddAllToCartButton(type);
+                    const bidOrderBtn = this.createUnifiedButton(LANG.bidOrder, () => this.purchaseMaterials(type, true), 'bid-order');
 
                     // 将三个按钮都添加到同一个容器中并排显示
-                    materialButtonContainer.append(directBuyBtn, bidOrderBtn, addToCartBtn);
+                    materialButtonContainer.append(directBuyBtn, addToCartBtn, bidOrderBtn);
 
                     if (type === 'production') {
                         const upgradeContainer = panel.querySelector(selectors.upgrade);
@@ -2298,6 +2533,56 @@
 
                     this.shoppingCart?.addItem(itemInfo, 1);
                 }
+            }
+
+            function addGlobalButtonStyles() {
+                const style = document.createElement('style');
+                style.textContent = \`
+                    /* 防止所有按钮文本被选择复制 */
+                    button, 
+                    .unified-action-btn,
+                    .buy-buttons-container button,
+                    .upgrade-buttons-container button,
+                    .market-cart-btn,
+                    [class*="Button_button"],
+                    [data-button-type],
+                    #cart-tab,
+                    #cart-buy-btn,
+                    #cart-bid-btn,
+                    #cart-clear-btn,
+                    #save-list-btn,
+                    [data-load-list],
+                    [data-delete-list],
+                    [data-remove-item] {
+                        user-select: none !important;
+                        -webkit-user-select: none !important;
+                        -moz-user-select: none !important;
+                        -ms-user-select: none !important;
+                    }
+                    
+                    /* 防止按钮内的任何元素被选择 */
+                    button *,
+                    .unified-action-btn *,
+                    .buy-buttons-container button *,
+                    .upgrade-buttons-container button *,
+                    .market-cart-btn *,
+                    [class*="Button_button"] *,
+                    [data-button-type] *,
+                    #cart-tab *,
+                    #cart-buy-btn *,
+                    #cart-bid-btn *,
+                    #cart-clear-btn *,
+                    #save-list-btn *,
+                    [data-load-list] *,
+                    [data-delete-list] *,
+                    [data-remove-item] * {
+                        user-select: none !important;
+                        -webkit-user-select: none !important;
+                        -moz-user-select: none !important;
+                        -ms-user-select: none !important;
+                    }
+                \`;
+                document.head.appendChild(style);
             }
 
             // 初始化
