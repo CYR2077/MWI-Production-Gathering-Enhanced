@@ -590,7 +590,7 @@
                         if (this.isOpen && !this.cartContainer.contains(e.target)) {
                             this.closeCart();
                         }
-                    });
+                    },true);
                 }
 
                 // 切换购物车状态
