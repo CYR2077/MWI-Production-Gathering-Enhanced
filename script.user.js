@@ -3,9 +3,9 @@
 // @name:zh-CN   [银河奶牛]生产采集增强
 // @name:en      MWI Production & Gathering Enhanced
 // @namespace    http://tampermonkey.net/
-// @version      3.2.3
-// @description  计算制造、烹饪、强化、房屋所需材料并一键购买，计算实时炼金利润，增加按照目标材料数量进行采集的功能，快速切换角色，购物车功能
-// @description:en  Calculate materials for crafting, cooking, enhancing, housing with one-click purchase, calculate real-time alchemy profits, add target-based gathering functionality, fast character switching, shopping cart feature
+// @version      3.2.4
+// @description  计算制造、烹饪、强化、房屋所需材料并一键购买，计算实时生产和炼金利润，增加按照目标材料数量进行采集的功能，快速切换角色，购物车功能
+// @description:en  Calculate materials for crafting, cooking, enhancing, housing with one-click purchase, calculate real-time production & alchemy profits, add target-based gathering functionality, fast character switching, shopping cart feature
 // @author       XIxixi297
 // @license      CC-BY-NC-SA-4.0
 // @match        https://www.milkywayidle.com/*
@@ -31,7 +31,7 @@
                 TIMEOUTS: { API: 8000, PURCHASE: 15000 },
                 CACHE_TTL: 60000,
                 ALCHEMY_CACHE_EXPIRY: 300000, // 炼金缓存5分钟
-                UNIVERSAL_CACHE_EXPIRY: 300000, // 通用计算器缓存5分钟
+                UNIVERSAL_CACHE_EXPIRY: 300000, // 生产计算器缓存5分钟
                 COLORS: {
                     buy: 'var(--color-market-buy)',
                     buyHover: 'var(--color-market-buy-hover)',
@@ -61,10 +61,11 @@
                 error: '出错，请检查控制台', wsNotAvailable: 'WebSocket接口未可用', waiting: '等待接口就绪...',
                 ready: '接口已就绪！', success: '成功', each: '个', allFailed: '全部失败',
                 targetLabel: '目标',
-                // 炼金相关
+                // 利润计算相关
                 pessimisticProfit: '悲观日利润', optimisticProfit: '乐观日利润',
-                lodingMarketData: '获取实时数据中...', noData: '缺少市场数据',
-                waitingAPI: '游戏核心对象获取失败...',
+                loadingMarketData: '获取实时数据中...', noData: '缺少市场数据',
+                waitingAPI: '游戏核心对象获取失败...', waitingAPIUniversal: '等待API就绪...',
+                errorUniversal: '计算出错',
                 // 购物车相关
                 addToCart: '加入购物车', add: '已添加', toCart: '到购物车',
                 shoppingCart: '购物车', cartEmpty: '购物车是空的',
@@ -81,11 +82,7 @@
                 exportStatusPrefix: '已导出 ', exportStatusSuffix: ' 个购物清单',
                 importStatusPrefix: '导入完成！共导入', importStatusSuffix: '个购物清单',
                 exportFailed: '导出失败', importFailed: '导入失败',
-                noListsToExport: '没有保存的购物清单可以导出', invalidImportFormat: '文件格式不正确',
-                // 通用利润计算器相关
-                loadingMarketData: '获取实时数据中...',
-                waitingAPIUniversal: '等待API就绪...',
-                errorUniversal: '计算出错'
+                noListsToExport: '没有保存的购物清单可以导出', invalidImportFormat: '文件格式不正确'
             } : {
                 directBuy: 'Buy(Left)', bidOrder: 'Bid(Right)',
                 directBuyUpgrade: 'Left', bidOrderUpgrade: 'Right',
@@ -96,10 +93,11 @@
                 error: 'error, check console', wsNotAvailable: 'WebSocket interface not available', waiting: 'Waiting for interface...',
                 ready: 'Interface ready!', success: 'Successfully', each: '', allFailed: 'All failed',
                 targetLabel: 'Target',
-                // 炼金相关
+                // 利润计算相关
                 pessimisticProfit: 'Pessimistic Daily Profit', optimisticProfit: 'Optimistic Daily Profit',
-                lodingMarketData: 'LodingMarketData...', noData: 'Lack of Market Data',
-                waitingAPI: 'Game core object acquisition failed...',
+                loadingMarketData: 'Loding Market Data...', noData: 'Lack of Market Data',
+                waitingAPI: 'Game core object acquisition failed...', waitingAPIUniversal: 'Waiting for API...',
+                errorUniversal: 'Calculation Error',
                 // 购物车相关
                 addToCart: 'Add to Cart', add: 'Added', toCart: 'to Cart',
                 shoppingCart: 'Shopping Cart', cartEmpty: 'Cart is empty',
@@ -116,11 +114,7 @@
                 exportStatusPrefix: 'Exported ', exportStatusSuffix: ' shopping lists',
                 importStatusPrefix: 'Import completed! ', importStatusSuffix: ' lists imported',
                 exportFailed: 'Export failed', importFailed: 'Import failed',
-                noListsToExport: 'No saved shopping lists to export', invalidImportFormat: 'Invalid file format',
-                // 通用利润计算器相关
-                loadingMarketData: 'Loading Market Data...',
-                waitingAPIUniversal: 'Waiting for API...',
-                errorUniversal: 'Calculation Error'
+                noListsToExport: 'No saved shopping lists to export', invalidImportFormat: 'Invalid file format'
             };
 
             // 采集动作配置
@@ -480,7 +474,7 @@
                 setupUI() { throw new Error('Must implement setupUI'); }
             }
 
-            // 通用行动利润计算器
+            // 生产行动利润计算器
             class UniversalActionProfitCalculator extends BaseProfitCalculator {
                 getContainerId() { return 'universal-action-profit-display'; }
                 getPessimisticId() { return 'action-pessimistic-profit'; }
@@ -996,7 +990,7 @@
                     const efficiencyData = this.calculateEfficiencyAndDrinkCosts();
 
                     return {
-                        successRate, 
+                        successRate,
                         timeCost,
                         efficiency: efficiencyData.efficiency,
                         requirements: requirements.filter(Boolean),
@@ -1023,7 +1017,7 @@
                         let income = price * drop.dropRate * drop.count * data.successRate;
                         if (drop.itemHrid !== '/items/coin') {
                             income *= 0.98;
-                        } 
+                        }
                         return sum + income;
                     }, 0);
 
@@ -1075,7 +1069,7 @@
                     }
                 }
             }
-            
+
             // 一体化购物车管理器
             class ShoppingCartManager {
                 constructor() {
@@ -1100,7 +1094,7 @@
                         this.updateCartBadge();
                         this.updateCartDisplay();
                         this.updateSavedListsDisplay();
-                        
+
                         // 同步输入框
                         const listNameInput = document.getElementById('list-name-input');
                         if (listNameInput) {
@@ -1113,21 +1107,21 @@
                 exportShoppingLists() {
                     try {
                         const listsData = Object.fromEntries(this.savedLists);
-                        
+
                         if (Object.keys(listsData).length === 0) {
                             if (window.uiManager?.toast) {
                                 window.uiManager.toast.show(\`\${LANG.noListsToExport}\`, 'warning');
                             }
                             return;
                         }
-                        
+
                         const exportData = {
                             timestamp: new Date().toLocaleString('sv-SE').replace(/[-:T ]/g, '').slice(0,14),
                             version: '3.2.2',
                             lists: listsData
                         };
 
-                        
+
                         const jsonData = JSON.stringify(exportData, null, 2);
                         const blob = new Blob([jsonData], { type: 'application/json' });
                         const url = URL.createObjectURL(blob);
@@ -1136,11 +1130,11 @@
                         a.download = \`milkyway-shopping-lists-\${new Date().toLocaleString('sv-SE').replace(/[-:T ]/g, '').slice(0,14)}.json\`;
                         a.click();
                         URL.revokeObjectURL(url);
-                        
+
                         if (window.uiManager?.toast) {
                             window.uiManager.toast.show(\`\${LANG.exportStatusPrefix} \${Object.keys(listsData).length} \${LANG.exportStatusSuffix}\`, 'success');
                         }
-                        
+
                     } catch (error) {
                         console.error('导出失败:', error);
                         if (window.uiManager?.toast) {
@@ -1155,38 +1149,38 @@
                     input.type = 'file';
                     input.accept = '.json';
                     input.style.display = 'none';
-                    
+
                     input.onchange = (event) => {
                         const file = event.target.files[0];
                         if (!file) return;
-                        
+
                         const reader = new FileReader();
                         reader.onload = (e) => {
                             try {
                                 const importData = JSON.parse(e.target.result);
-                                
+
                                 if (!this.validateImportData(importData)) {
                                     throw new Error(\`\${LANG.invalidImportFormat}\`);
                                 }
-                                
+
                                 const listsData = importData.lists || importData;
-                                
+
                                 this.savedLists.clear();
-                                
+
                                 for (const [listName, listData] of Object.entries(listsData)) {
                                     this.savedLists.set(listName, listData);
                                 }
-                                
+
                                 this.saveSavedListsToStorage();
                                 this.updateSavedListsDisplay();
-                                
+
                                 const importedCount = Object.keys(listsData).length;
                                 const message = \`\${LANG.importStatusPrefix}\${importedCount}\${LANG.importStatusSuffix}\`;
-                                
+
                                 if (window.uiManager?.toast) {
                                     window.uiManager.toast.show(message, 'success');
                                 }
-                                
+
                             } catch (error) {
                                 console.error('导入失败:', error);
                                 if (window.uiManager?.toast) {
@@ -1194,10 +1188,10 @@
                                 }
                             }
                         };
-                        
+
                         reader.readAsText(file);
                     };
-                    
+
                     document.body.appendChild(input);
                     input.click();
                     document.body.removeChild(input);
@@ -1206,18 +1200,18 @@
                 // 验证导入数据
                 validateImportData(data) {
                     if (!data || typeof data !== 'object') return false;
-                    
+
                     // 获取清单数据
                     const listsData = data.lists || data;
                     if (!listsData || typeof listsData !== 'object') return false;
-                    
+
                     // 验证每个清单的格式
                     for (const [listName, listData] of Object.entries(listsData)) {
                         if (!listData || typeof listData !== 'object') return false;
                         if (!listData.name || typeof listData.name !== 'string') return false;
                         if (!listData.items || typeof listData.items !== 'object') return false;
                     }
-                    
+
                     return true;
                 }
 
@@ -1225,7 +1219,7 @@
                 createCartDrawer() {
                     this.cartContainer = document.createElement('div');
                     this.cartContainer.id = 'shopping-cart-drawer';
-                    
+
                     utils.applyStyles(this.cartContainer, {
                         position: 'fixed',
                         top: '80px',
@@ -1500,7 +1494,7 @@
                     cartTab.addEventListener('contextmenu', (e) => {
                         e.preventDefault(); // 总是阻止默认右键菜单
                         e.stopPropagation();
-                        
+
                         // 只有在购物车有物品时才清空购物车
                         if (this.items.size > 0) {
                             this.clearCart();
@@ -1553,14 +1547,14 @@
                     // 导入导出按钮
                     exportBtn.addEventListener('mouseenter', () => exportBtn.style.backgroundColor = 'rgba(76, 175, 80, 0.9)');
                     exportBtn.addEventListener('mouseleave', () => exportBtn.style.backgroundColor = 'rgba(76, 175, 80, 0.8)');
-                    
+
                     importBtn.addEventListener('mouseenter', () => importBtn.style.backgroundColor = 'rgba(33, 150, 243, 0.9)');
                     importBtn.addEventListener('mouseleave', () => importBtn.style.backgroundColor = 'rgba(33, 150, 243, 0.8)');
 
                     // 按钮悬停效果
                     buyBtn.addEventListener('mouseenter', () => buyBtn.style.backgroundColor = 'var(--color-market-buy-hover)');
                     buyBtn.addEventListener('mouseleave', () => buyBtn.style.backgroundColor = 'var(--color-market-buy)');
-                    
+
                     bidBtn.addEventListener('mouseenter', () => bidBtn.style.backgroundColor = 'var(--color-market-sell-hover)');
                     bidBtn.addEventListener('mouseleave', () => bidBtn.style.backgroundColor = 'var(--color-market-sell)');
 
@@ -1619,7 +1613,7 @@
                         if (listItem) {
                             e.stopPropagation();
                             e.preventDefault();
-                            
+
                             // 从加载按钮获取清单名称
                             const loadBtn = listItem.querySelector('[data-load-list]');
                             if (loadBtn) {
@@ -1659,8 +1653,8 @@
                     }, true);
 
                     document.addEventListener('click', (e) => {
-                        if (this.isOpen && 
-                            !this.cartContainer.contains(e.target) && 
+                        if (this.isOpen &&
+                            !this.cartContainer.contains(e.target) &&
                             !this.cartContainer.contains(mouseDownTarget)) {
                             this.closeCart();
                         }
@@ -1676,7 +1670,7 @@
                         }
                         return false;
                     }
-                    
+
                     if (this.items.size === 0) {
                         if (window.uiManager?.toast) {
                             window.uiManager.toast.show(\`\${LANG.cartEmptyCannotSave}\`, 'warning');
@@ -1698,7 +1692,7 @@
                         items: {},
                         savedAt: Date.now()
                     };
-                    
+
                     // 深拷贝items
                     for (const [itemId, itemData] of this.items) {
                         listData.items[itemId] = {
@@ -1727,7 +1721,7 @@
 
                     // 清空当前购物车
                     this.items.clear();
-                    
+
                     // 深拷贝保存的清单数据到当前购物车
                     for (const [itemId, itemData] of Object.entries(listData.items)) {
                         this.items.set(itemId, {
@@ -1739,7 +1733,7 @@
 
                     // 设置当前清单名称
                     this.currentListName = listName;
-                    
+
                     // 同步到输入框
                     const listNameInput = document.getElementById('list-name-input');
                     if (listNameInput) {
@@ -1761,7 +1755,7 @@
                     if (this.savedLists.delete(listName)) {
                         this.saveSavedListsToStorage();
                         this.updateSavedListsDisplay();
-                        
+
                         if (window.uiManager?.toast) {
                             window.uiManager.toast.show(\`"\${listName}"\${LANG.deleted}\`, 'success');
                         }
@@ -1823,7 +1817,7 @@
 
                     for (const [listName, listData] of sortedLists) {
                         const itemCount = Object.keys(listData.items).length;
-                        
+
                         html += \`
                             <div style="
                                 display: flex;
@@ -1917,11 +1911,11 @@
                 updateCartBadge() {
                     const tabBadge = document.getElementById('cart-tab-badge');
                     const countDisplay = document.getElementById('cart-count-display');
-                    
+
                     if (!tabBadge || !countDisplay) return;
 
                     const itemTypeCount = this.items.size;
-                    
+
                     if (itemTypeCount > 0) {
                         tabBadge.textContent = itemTypeCount > 99 ? '99+' : itemTypeCount.toString();
                         tabBadge.style.display = 'flex';
@@ -1989,7 +1983,7 @@
 
                     this.items.clear();
                     this.currentListName = '';
-                    
+
                     // 清空输入框
                     const listNameInput = document.getElementById('list-name-input');
                     if (listNameInput) {
@@ -1999,7 +1993,7 @@
                     this.saveCartToStorage();
                     this.updateCartBadge();
                     this.updateCartDisplay();
-                    
+
                     if (window.uiManager?.toast) {
                         window.uiManager.toast.show(\`\${LANG.cartClearSuccess}\`, 'success', 3000);
                     }
@@ -2119,16 +2113,16 @@
                     const buyBtn = document.getElementById('cart-buy-btn');
                     const bidBtn = document.getElementById('cart-bid-btn');
                     const clearBtn = document.getElementById('cart-clear-btn');
-                    
+
                     const originalBuyText = buyBtn.textContent;
                     const originalBidText = bidBtn.textContent;
                     const originalBuyBg = buyBtn.style.backgroundColor;
                     const originalBidBg = bidBtn.style.backgroundColor;
-                    
+
                     buyBtn.disabled = true;
                     bidBtn.disabled = true;
                     clearBtn.disabled = true;
-                    
+
                     if (isBidOrder) {
                         bidBtn.textContent = LANG.submitting;
                         bidBtn.style.backgroundColor = CONFIG.COLORS.disabled;
@@ -2138,11 +2132,11 @@
                         buyBtn.style.backgroundColor = CONFIG.COLORS.disabled;
                         buyBtn.style.cursor = 'not-allowed';
                     }
-                    
+
                     const otherBtn = isBidOrder ? buyBtn : bidBtn;
                     otherBtn.style.backgroundColor = CONFIG.COLORS.disabled;
                     otherBtn.style.cursor = 'not-allowed';
-                    
+
                     clearBtn.style.backgroundColor = CONFIG.COLORS.disabled;
                     clearBtn.style.cursor = 'not-allowed';
                     clearBtn.style.opacity = '0.5';
@@ -2186,14 +2180,14 @@
                         buyBtn.disabled = false;
                         bidBtn.disabled = false;
                         clearBtn.disabled = false;
-                        
+
                         buyBtn.textContent = originalBuyText;
                         bidBtn.textContent = originalBidText;
                         buyBtn.style.backgroundColor = originalBuyBg;
                         bidBtn.style.backgroundColor = originalBidBg;
                         buyBtn.style.cursor = 'pointer';
                         bidBtn.style.cursor = 'pointer';
-                        
+
                         clearBtn.style.backgroundColor = 'transparent';
                         clearBtn.style.cursor = 'pointer';
                         clearBtn.style.opacity = '1';
@@ -2219,7 +2213,7 @@
                         const cartData = JSON.parse(localStorage.getItem('milkyway-current-cart') || '{}');
                         this.items = new Map(Object.entries(cartData.items || {}));
                         this.currentListName = cartData.currentListName || '';
-                        
+
                         // 同步输入框
                         const listNameInput = document.getElementById('list-name-input');
                         if (listNameInput) {
@@ -2271,7 +2265,7 @@
                     };
 
                     const config = buttonConfigs[buttonType];
-                    
+
                     utils.applyStyles(btn, {
                         padding: '0 6px',
                         backgroundColor: config.backgroundColor,
@@ -2364,16 +2358,14 @@
                 hookMessage(messageType, callback) { return window.AutoBuyAPI.hookMessage(messageType, callback); }
             }
 
-            // 炼金利润计算器（保持原代码不变）
-
-            // UI管理器（整合所有功能）
+            // UI管理器
             class UIManager {
                 constructor() {
                     this.toast = new Toast();
                     this.api = new AutoBuyAPI();
                     this.autoStopManager = new AutoStopManager();
                     this.alchemyCalculator = new AlchemyProfitCalculator(this.api);
-                    this.universalCalculator = new UniversalActionProfitCalculator(this.api); // 新增通用计算器
+                    this.universalCalculator = new UniversalActionProfitCalculator(this.api);
                     this.shoppingCart = new ShoppingCartManager();
                     this.observer = null;
                     this.loggerReady = false;
@@ -2420,7 +2412,7 @@
                 }
 
                 // 炼金UI管理
-                setupAlchemyUI() {  
+                setupAlchemyUI() {
                     const alchemyComponent = document.querySelector('.SkillActionDetail_alchemyComponent__1J55d');
                     const instructionsEl = document.querySelector('.SkillActionDetail_instructions___EYV5');
                     const infoContainer = document.querySelector('.SkillActionDetail_info__3umoI');
@@ -2461,12 +2453,12 @@
                     }
                 }
 
-                // 设置通用利润计算器UI
+                // 设置生产利润计算器UI
                 setupUniversalCalculatorUI() {
                     this.universalCalculator.setupUI();
                 }
 
-                // 检查通用利润计算器更新
+                // 检查生产利润计算器更新
                 checkUniversalCalculatorUpdates() {
                     this.universalCalculator.checkForUpdates();
                 }
@@ -2480,7 +2472,7 @@
                         });
                         // 检查炼金UI
                         this.setupAlchemyUI();
-                        // 检查通用计算器UI
+                        // 检查生产计算器UI
                         this.setupUniversalCalculatorUI();
                         // 检查自动停止UI
                         this.autoStopManager.injectAutoStopUI();
@@ -2523,7 +2515,7 @@
                                 }, 1);
                             }
 
-                            // 检查通用计算器更新
+                            // 检查生产计算器更新
                             if (e.target.closest('.SkillActionDetail_regularComponent__3oCgr') ||
                                 e.target.closest('[class*="ItemSelector"]') ||
                                 e.target.closest('.Item_itemContainer__x7kH1') ||
@@ -2569,7 +2561,7 @@
                         }
                     }).observe(document.body, { childList: true, subtree: true });
 
-                    // 设置输入事件监听器（为通用计算器）
+                    // 设置输入事件监听器
                     document.addEventListener('input', () => {
                         setTimeout(() => this.checkUniversalCalculatorUpdates(), 100);
                     });
@@ -2597,17 +2589,17 @@
                     }
 
                     const isBidOrder = buttonType === 'bid-order';
-                    
+
                     btn.disabled = true;
                     btn.textContent = isBidOrder ? LANG.submitting : LANG.buying;
-                    
+
                     // 保存原始样式
                     const originalBg = btn.style.backgroundColor;
                     const originalCursor = btn.style.cursor;
-                    
-                    utils.applyStyles(btn, { 
-                        backgroundColor: CONFIG.COLORS.disabled, 
-                        cursor: "not-allowed" 
+
+                    utils.applyStyles(btn, {
+                        backgroundColor: CONFIG.COLORS.disabled,
+                        cursor: "not-allowed"
                     });
 
                     try {
@@ -2617,9 +2609,9 @@
                     } finally {
                         btn.disabled = false;
                         btn.textContent = originalText;
-                        utils.applyStyles(btn, { 
-                            backgroundColor: originalBg, 
-                            cursor: originalCursor 
+                        utils.applyStyles(btn, {
+                            backgroundColor: originalBg,
+                            cursor: originalCursor
                         });
                     }
                 }
@@ -2859,7 +2851,7 @@
                             // 使用统一按钮创建方法创建升级按钮
                             const directBuyUpgradeBtn = this.createUnifiedButton(LANG.directBuyUpgrade, () => this.purchaseUpgrades(type, false), 'direct-buy');
                             const bidOrderUpgradeBtn = this.createUnifiedButton(LANG.bidOrderUpgrade, () => this.purchaseUpgrades(type, true), 'bid-order');
-                            
+
                             upgradeButtonContainer.append(directBuyUpgradeBtn, bidOrderUpgradeBtn);
 
                             upgradeContainer.appendChild(upgradeButtonContainer);
@@ -2921,12 +2913,12 @@
                     const currentItem = document.querySelector('.MarketplacePanel_currentItem__3ercC');
                     const svgElement = currentItem?.querySelector('svg[aria-label]');
                     const useElement = svgElement?.querySelector('use');
-                    
+
                     if (!svgElement || !useElement) return;
 
                     const itemName = svgElement.getAttribute('aria-label');
                     const itemId = useElement.getAttribute('href')?.split('#')[1];
-                    
+
                     if (!itemName || !itemId) return;
 
                     const itemInfo = {
@@ -3299,7 +3291,7 @@
                 const style = document.createElement('style');
                 style.textContent = \`
                     /* 防止所有按钮文本被选择复制 */
-                    button, 
+                    button,
                     .unified-action-btn,
                     .buy-buttons-container button,
                     .upgrade-buttons-container button,
@@ -3319,7 +3311,7 @@
                         -moz-user-select: none !important;
                         -ms-user-select: none !important;
                     }
-                    
+
                     /* 防止按钮内的任何元素被选择 */
                     button *,
                     .unified-action-btn *,
@@ -3482,13 +3474,15 @@
             } catch (e) { }
         }, 3e3);
         const OriginalWebSocket = window.WebSocket;
-        window.WebSocket = new Proxy(OriginalWebSocket, {
-            construct(target, args) {
-                const ws = new target(...args);
+
+        function InterceptedWebSocket(...args) {
+            const [url] = args;
+            const ws = new OriginalWebSocket(...args);
+
+            if (typeof url === 'string' && url.includes('api.milkywayidle.com/ws')) {
                 window.wsInstances.push(ws);
                 window.currentWS = ws;
 
-                // 消息拦截
                 const originalSend = ws.send;
                 ws.send = function (data) {
                     try { dispatchMessage(JSON.parse(data), 'send'); } catch { }
@@ -3514,11 +3508,33 @@
                         window.currentWS = window.wsInstances[window.wsInstances.length - 1] || null;
                     }
                 });
+            }
 
-                return ws;
+            return ws;
+        }
+
+        InterceptedWebSocket.prototype = OriginalWebSocket.prototype;
+        InterceptedWebSocket.OPEN = OriginalWebSocket.OPEN;
+        InterceptedWebSocket.CONNECTING = OriginalWebSocket.CONNECTING;
+        InterceptedWebSocket.CLOSING = OriginalWebSocket.CLOSING;
+        InterceptedWebSocket.CLOSED = OriginalWebSocket.CLOSED;
+
+        window.WebSocket = InterceptedWebSocket;
+
+        window.addEventListener('error', e => {
+            if (e.message && e.message.includes('WebSocket') && e.message.includes('failed')) {
+                e.stopImmediatePropagation();
+                e.preventDefault();
+            }
+        }, true);
+
+        window.addEventListener('unhandledrejection', e => {
+            if (e.reason && typeof e.reason.message === 'string' && e.reason.message.includes('WebSocket')) {
+                e.preventDefault();
             }
         });
     }
+
 
     // 获取游戏核心对象
     function getGameCore() {
