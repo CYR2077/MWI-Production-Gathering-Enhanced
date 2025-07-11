@@ -1057,7 +1057,6 @@
 
                     if (container && !existingDisplay) {
                         const profitDisplay = this.createProfitDisplay();
-                        // 炼金界面特定的插入位置
                         const infoContainer = container.querySelector('.SkillActionDetail_info__3umoI');
                         if (infoContainer) {
                             infoContainer.parentNode.insertBefore(profitDisplay, infoContainer.nextSibling);
@@ -1143,7 +1142,7 @@
                     }
                 }
 
-                // 导入购物清单（保持不变）
+                // 导入购物清单
                 importShoppingLists() {
                     const input = document.createElement('input');
                     input.type = 'file';
