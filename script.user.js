@@ -31,6 +31,7 @@
                 TIMEOUTS: { API: 8000, PURCHASE: 15000 },
                 CACHE_TTL: 60000,
                 ALCHEMY_CACHE_EXPIRY: 300000, // 炼金缓存5分钟
+                UNIVERSAL_CACHE_EXPIRY: 300000, // 通用计算器缓存5分钟
                 COLORS: {
                     buy: 'var(--color-market-buy)',
                     buyHover: 'var(--color-market-buy-hover)',
@@ -42,7 +43,10 @@
                     warning: 'var(--color-warning)',
                     space300: 'var(--color-space-300)',
                     cart: '#9c27b0',
-                    cartHover: '#7b1fa2'
+                    cartHover: '#7b1fa2',
+                    profit: '#4CAF50',
+                    loss: '#f44336',
+                    neutral: '#757575'
                 }
             };
 
@@ -78,6 +82,10 @@
                 importStatusPrefix: '导入完成！共导入', importStatusSuffix: '个购物清单',
                 exportFailed: '导出失败', importFailed: '导入失败',
                 noListsToExport: '没有保存的购物清单可以导出', invalidImportFormat: '文件格式不正确',
+                // 通用利润计算器相关
+                loadingMarketData: '获取实时数据中...',
+                waitingAPIUniversal: '等待API就绪...',
+                errorUniversal: '计算出错'
             } : {
                 directBuy: 'Buy(Left)', bidOrder: 'Bid(Right)',
                 directBuyUpgrade: 'Left', bidOrderUpgrade: 'Right',
@@ -109,6 +117,10 @@
                 importStatusPrefix: 'Import completed! ', importStatusSuffix: ' lists imported',
                 exportFailed: 'Export failed', importFailed: 'Import failed',
                 noListsToExport: 'No saved shopping lists to export', invalidImportFormat: 'Invalid file format',
+                // 通用利润计算器相关
+                loadingMarketData: 'Loading Market Data...',
+                waitingAPIUniversal: 'Waiting for API...',
+                errorUniversal: 'Calculation Error'
             };
 
             // 采集动作配置
@@ -181,7 +193,6 @@
                     instructions: '.SkillActionDetail_instructions___EYV5',
                     cost: '.SkillActionDetail_costs__3Q6Bk'
                 },
-                // 炼金选择器
                 alchemy: {
                     container: '.SkillActionDetail_alchemyComponent__1J55d',
                     info: '.SkillActionDetail_info__3umoI',
@@ -196,16 +207,13 @@
                 }
             };
 
-            // 工具函数
             const utils = {
                 getCountById(id) {
                     try {
                         const headerElement = document.querySelector('.Header_header__1DxsV');
                         const reactKey = Object.keys(headerElement).find(key => key.startsWith('__reactProps'));
                         const characterItemMap = headerElement[reactKey]?.children?.[0]?._owner?.memoizedProps?.characterItemMap;
-
                         if (!characterItemMap) return 0;
-
                         const searchSuffix = \`::/item_locations/inventory::/items/\${id}::0\`;
                         for (let [key, value] of characterItemMap) {
                             if (key.endsWith(searchSuffix)) {
@@ -245,13 +253,12 @@
                     }
                 },
 
-                // 炼金工具函数
                 getReactProps(el) {
                     const key = Object.keys(el || {}).find(k => k.startsWith('__reactProps\$'));
                     return key ? el[key]?.children[0]?._owner?.memoizedProps : null;
                 },
 
-                isCacheExpired(item, timestamps, expiry = CONFIG.ALCHEMY_CACHE_EXPIRY) {
+                isCacheExpired(item, timestamps, expiry = CONFIG.UNIVERSAL_CACHE_EXPIRY) {
                     return !timestamps[item] || Date.now() - timestamps[item] > expiry;
                 },
 
@@ -268,11 +275,8 @@
                     let num = text.toString().replace(/\\s/g, '');
                     num = num.replace(/[^\\d,.]/g, '');
                     if (!/\\d/.test(num)) return "0";
-
                     let separators = num.match(/[,.]/g) || [];
-
                     if (separators.length === 0) return num + ".0";
-
                     if (separators.length > 1) {
                         if (separators.every(s => s === separators[0])) {
                             return num.replace(/[,.]/g, '') + ".0";
@@ -281,36 +285,797 @@
                         let parts = num.split(lastSep);
                         return parts[0].replace(/[,.]/g, '') + '.' + parts[1];
                     }
-
                     let sep = separators[0];
                     let parts = num.split(sep);
                     let rightPart = parts[1] || '';
                     return rightPart.length === 3 ? parts[0] + rightPart + '.0' : parts[0] + '.' + rightPart;
                 },
 
-                // 提取物品信息
                 extractItemInfo(itemContainer) {
                     try {
                         const svgElement = itemContainer.querySelector('svg[aria-label]');
                         const nameElement = itemContainer.querySelector('.Item_name__2C42x');
-
                         if (!svgElement || !nameElement) return null;
-
                         const itemName = svgElement.getAttribute('aria-label') || nameElement.textContent.trim();
                         const itemId = utils.extractItemId(svgElement);
                         const useHref = svgElement.querySelector('use')?.getAttribute('href');
-
-                        return {
-                            name: itemName,
-                            id: itemId,
-                            iconHref: useHref
-                        };
+                        return { name: itemName, id: itemId, iconHref: useHref };
                     } catch {
                         return null;
                     }
                 }
             };
 
+            // 基础利润计算器类
+            class BaseProfitCalculator {
+                constructor(api, cacheExpiry = CONFIG.UNIVERSAL_CACHE_EXPIRY) {
+                    this.api = api;
+                    this.marketData = {};
+                    this.marketTimestamps = {};
+                    this.requestQueue = [];
+                    this.isProcessing = false;
+                    this.initialized = false;
+                    this.updateTimeout = null;
+                    this.lastState = '';
+                    this.cacheExpiry = cacheExpiry;
+                    this.init();
+                }
+
+                async init() {
+                    while (!window.AutoBuyAPI?.core || !this.api.isReady) {
+                        await utils.delay(100);
+                    }
+                    try {
+                        window.AutoBuyAPI.hookMessage("market_item_order_books_updated", obj => {
+                            const { itemHrid, orderBooks } = obj.marketItemOrderBooks;
+                            this.marketData[itemHrid] = orderBooks;
+                            this.marketTimestamps[itemHrid] = Date.now();
+                        });
+                        this.initialized = true;
+                    } catch (error) {
+                        console.error('[ProfitCalculator] 初始化失败:', error);
+                    }
+                    setInterval(() => this.cleanCache(), 60000);
+                }
+
+                cleanCache() {
+                    const now = Date.now();
+                    Object.keys(this.marketTimestamps).forEach(item => {
+                        if (now - this.marketTimestamps[item] > this.cacheExpiry) {
+                            delete this.marketData[item];
+                            delete this.marketTimestamps[item];
+                        }
+                    });
+                }
+
+                async getMarketData(itemHrid) {
+                    return new Promise(resolve => {
+                        if (this.marketData[itemHrid] && !utils.isCacheExpired(itemHrid, this.marketTimestamps, this.cacheExpiry)) {
+                            return resolve(this.marketData[itemHrid]);
+                        }
+                        if (!this.initialized || !window.AutoBuyAPI?.core) {
+                            return resolve(null);
+                        }
+                        this.requestQueue.push({ itemHrid, resolve });
+                        this.processQueue();
+                    });
+                }
+
+                async processQueue() {
+                    if (this.isProcessing || !this.requestQueue.length || !this.initialized || !window.AutoBuyAPI?.core) return;
+                    this.isProcessing = true;
+                    while (this.requestQueue.length > 0) {
+                        const batch = this.requestQueue.splice(0, 6);
+                        await Promise.all(batch.map(async ({ itemHrid, resolve }) => {
+                            if (this.marketData[itemHrid] && !utils.isCacheExpired(itemHrid, this.marketTimestamps, this.cacheExpiry)) {
+                                return resolve(this.marketData[itemHrid]);
+                            }
+                            try {
+                                window.AutoBuyAPI.core.handleGetMarketItemOrderBooks(itemHrid);
+                            } catch (error) {
+                                console.error('API调用失败:', error);
+                            }
+                            const start = Date.now();
+                            await new Promise(waitResolve => {
+                                const check = setInterval(() => {
+                                    if (this.marketData[itemHrid] || Date.now() - start > 5000) {
+                                        clearInterval(check);
+                                        resolve(this.marketData[itemHrid] || null);
+                                        waitResolve();
+                                    }
+                                }, 50);
+                            });
+                        }));
+                        if (this.requestQueue.length > 0) await utils.delay(100);
+                    }
+                    this.isProcessing = false;
+                }
+
+                debounceUpdate(callback) {
+                    clearTimeout(this.updateTimeout);
+                    this.updateTimeout = setTimeout(callback, 200);
+                }
+
+                async updateProfitDisplay() {
+                    const pessimisticEl = document.getElementById(this.getPessimisticId());
+                    const optimisticEl = document.getElementById(this.getOptimisticId());
+                    if (!pessimisticEl || !optimisticEl) return;
+
+                    if (!this.initialized || !window.AutoBuyAPI?.core) {
+                        pessimisticEl.textContent = optimisticEl.textContent = this.getWaitingText();
+                        pessimisticEl.style.color = optimisticEl.style.color = CONFIG.COLORS.warning;
+                        return;
+                    }
+
+                    try {
+                        const data = await this.getActionData();
+                        if (!data) {
+                            pessimisticEl.textContent = optimisticEl.textContent = LANG.noData;
+                            pessimisticEl.style.color = optimisticEl.style.color = CONFIG.COLORS.neutral;
+                            return;
+                        }
+
+                        [false, true].forEach((useOptimistic, index) => {
+                            const profit = this.calculateProfit(data, useOptimistic);
+                            const el = index ? optimisticEl : pessimisticEl;
+                            if (profit === null) {
+                                el.textContent = LANG.noData;
+                                el.style.color = CONFIG.COLORS.neutral;
+                            } else {
+                                el.textContent = utils.formatProfit(profit);
+                                el.style.color = profit >= 0 ? CONFIG.COLORS.profit : CONFIG.COLORS.loss;
+                            }
+                        });
+                    } catch (error) {
+                        console.error('[ProfitCalculator] 计算出错:', error);
+                        pessimisticEl.textContent = optimisticEl.textContent = LANG.error;
+                        pessimisticEl.style.color = optimisticEl.style.color = CONFIG.COLORS.warning;
+                    }
+                }
+
+                createProfitDisplay() {
+                    const container = document.createElement('div');
+                    container.id = this.getContainerId();
+                    container.style.cssText = \`
+                        display: flex;
+                        flex-direction: column;
+                        gap: 8px;
+                        font-family: Roboto, Helvetica, Arial, sans-serif;
+                        font-size: 14px;
+                        line-height: 20px;
+                        letter-spacing: 0.00938em;
+                        color: var(--color-text-dark-mode);
+                        font-weight: 400;
+                        margin-top: 12px;
+                    \`;
+                    container.innerHTML = \`
+                        <div style="display: flex; align-items: center; gap: 8px">
+                            <span style="color: \${CONFIG.COLORS.space300}">\${LANG.pessimisticProfit}</span>
+                            <span id="\${this.getPessimisticId()}" style="font-weight: 500">\${this.initialized ? LANG.loadingMarketData : this.getWaitingText()}</span>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 8px">
+                            <span style="color: \${CONFIG.COLORS.space300}">\${LANG.optimisticProfit}</span>
+                            <span id="\${this.getOptimisticId()}" style="font-weight: 500">\${this.initialized ? LANG.loadingMarketData : this.getWaitingText()}</span>
+                        </div>
+                    \`;
+                    return container;
+                }
+
+                checkForUpdates() {
+                    const currentState = this.getStateFingerprint();
+                    if (currentState !== this.lastState && currentState) {
+                        this.lastState = currentState;
+                        this.debounceUpdate(() => this.updateProfitDisplay());
+                    }
+                }
+
+                // 子类需要实现的抽象方法
+                getContainerId() { throw new Error('Must implement getContainerId'); }
+                getPessimisticId() { throw new Error('Must implement getPessimisticId'); }
+                getOptimisticId() { throw new Error('Must implement getOptimisticId'); }
+                getWaitingText() { throw new Error('Must implement getWaitingText'); }
+                getActionData() { throw new Error('Must implement getActionData'); }
+                calculateProfit(data, useOptimistic) { throw new Error('Must implement calculateProfit'); }
+                getStateFingerprint() { throw new Error('Must implement getStateFingerprint'); }
+                setupUI() { throw new Error('Must implement setupUI'); }
+            }
+
+            // 通用行动利润计算器
+            class UniversalActionProfitCalculator extends BaseProfitCalculator {
+                getContainerId() { return 'universal-action-profit-display'; }
+                getPessimisticId() { return 'action-pessimistic-profit'; }
+                getOptimisticId() { return 'action-optimistic-profit'; }
+                getWaitingText() { return LANG.waitingAPIUniversal; }
+
+                getCurrentActionType() {
+                    try {
+                        const mainPanel = document.querySelector('.MainPanel_subPanelContainer__1i-H9');
+                        if (!mainPanel) return null;
+                        const reactPropsKey = Object.keys(mainPanel).find(k => k.startsWith('__reactProps\$'));
+                        if (!reactPropsKey) return null;
+                        return mainPanel[reactPropsKey]?.children?._owner?.memoizedProps?.navTarget || null;
+                    } catch (error) {
+                        console.error('获取行动类型失败:', error);
+                        return null;
+                    }
+                }
+
+                getCurrentSkillLevel(actionType) {
+                    try {
+                        if (!actionType) return 0;
+                        const mainPanel = document.querySelector('.MainPanel_subPanelContainer__1i-H9');
+                        if (!mainPanel) return 0;
+                        const reactPropsKey = Object.keys(mainPanel).find(k => k.startsWith('__reactProps\$'));
+                        if (!reactPropsKey) return 0;
+                        const skillMap = mainPanel[reactPropsKey]?.children?._owner?.memoizedProps?.characterSkillMap;
+                        const skillHrid = \`/skills/\${actionType}\`;
+                        return skillMap?.get?.(skillHrid)?.level || 0;
+                    } catch (error) {
+                        console.error('获取技能等级失败:', error);
+                        return 0;
+                    }
+                }
+
+                getRequiredLevel() {
+                    try {
+                        const levelElement = document.querySelector('.SkillActionDetail_levelRequirement__3Ht0f');
+                        if (!levelElement) return 0;
+                        const levelText = levelElement.textContent;
+                        const match = levelText.match(/Lv\\.(\\d+)(?:\\s*\\+\\s*(\\d+))?/);
+                        if (match) {
+                            const baseLevel = parseInt(match[1]);
+                            const bonus = match[2] ? parseInt(match[2]) : 0;
+                            return baseLevel + bonus;
+                        }
+                        return 0;
+                    } catch (error) {
+                        console.error('获取要求等级失败:', error);
+                        return 0;
+                    }
+                }
+
+                getSkillTypeFromLevelBuff(buffTypeHrid) {
+                    const levelBuffMap = {
+                        '/buff_types/cooking_level': 'cooking',
+                        '/buff_types/brewing_level': 'brewing',
+                        '/buff_types/smithing_level': 'smithing',
+                        '/buff_types/crafting_level': 'crafting',
+                        '/buff_types/enhancement_level': 'enhancement',
+                        '/buff_types/foraging_level': 'foraging',
+                        '/buff_types/woodcutting_level': 'woodcutting',
+                        '/buff_types/mining_level': 'mining'
+                    };
+                    return levelBuffMap[buffTypeHrid] || null;
+                }
+
+                async calculateBuffEffectsAndCosts() {
+                    const container = document.querySelector('.SkillActionDetail_regularComponent__3oCgr');
+                    const props = utils.getReactProps(container);
+                    if (!props) return { efficiency: 0, drinkCosts: [] };
+
+                    const buffs = props.actionBuffs || [];
+                    let efficiencyBuff = 0;
+                    let levelBonus = 0;
+
+                    const actionType = this.getCurrentActionType();
+                    const skillLevel = this.getCurrentSkillLevel(actionType);
+                    const requiredLevel = this.getRequiredLevel();
+
+                    for (const buff of buffs) {
+                        if (buff.typeHrid === '/buff_types/efficiency') {
+                            efficiencyBuff += buff.flatBoost || 0;
+                        }
+                        if (buff.typeHrid && buff.typeHrid.includes('_level')) {
+                            const buffSkillType = this.getSkillTypeFromLevelBuff(buff.typeHrid);
+                            if (buffSkillType === actionType) {
+                                levelBonus += buff.flatBoost || 0;
+                            }
+                        }
+                    }
+
+                    const finalSkillLevel = skillLevel + levelBonus;
+                    const levelEfficiencyBonus = Math.max(0, (finalSkillLevel - requiredLevel) / 100);
+                    const totalEfficiency = efficiencyBuff + levelEfficiencyBonus;
+
+                    const drinkCosts = await this.getDrinkCosts();
+                    return { efficiency: totalEfficiency, drinkCosts };
+                }
+
+                async getDrinkCosts() {
+                    const drinkCosts = [];
+                    const consumableElements = [...document.querySelectorAll('.ActionTypeConsumableSlots_consumableSlots__kFKk0 .Item_itemContainer__x7kH1')];
+                    for (const element of consumableElements) {
+                        const itemData = await this.getItemData(element, false, false, false);
+                        if (itemData && itemData.itemHrid !== '/items/coin') {
+                            drinkCosts.push({
+                                itemHrid: itemData.itemHrid,
+                                asks: itemData.asks,
+                                bids: itemData.bids,
+                                enhancementLevel: itemData.enhancementLevel
+                            });
+                        }
+                    }
+                    return drinkCosts;
+                }
+
+                async getItemData(element, isOutput = false, isRequirement = false, isUpgrade = false) {
+                    const href = element?.querySelector('svg use')?.getAttribute('href');
+                    const itemHrid = href ? \`/items/\${href.split('#')[1]}\` : null;
+                    if (!itemHrid) return null;
+
+                    let enhancementLevel = 0;
+                    if (isRequirement && !isUpgrade) {
+                        const enhancementEl = element.querySelector('.Item_enhancementLevel__19g-e');
+                        if (enhancementEl) {
+                            const match = enhancementEl.textContent.match(/\\+(\\d+)/);
+                            enhancementLevel = match ? parseInt(match[1]) : 0;
+                        }
+                    }
+                    if (isUpgrade) enhancementLevel = 0;
+
+                    let asks = 0, bids = 0;
+                    if (itemHrid === '/items/coin') {
+                        asks = bids = 1;
+                    } else {
+                        const orderBooks = await this.getMarketData(itemHrid);
+                        if (orderBooks && orderBooks[enhancementLevel]) {
+                            const { asks: asksList, bids: bidsList } = orderBooks[enhancementLevel];
+                            asks = (asksList && asksList[0]) ? asksList[0].price : 0;
+                            bids = (bidsList && bidsList[0]) ? bidsList[0].price : 0;
+                        } else {
+                            asks = bids = orderBooks ? -1 : 0;
+                        }
+                    }
+
+                    const result = { itemHrid, asks, bids, enhancementLevel };
+
+                    if (isUpgrade) {
+                        result.count = 1;
+                    } else if (isOutput) {
+                        const outputContainer = element.closest('.SkillActionDetail_item__2vEAz');
+                        const countText = outputContainer?.querySelector('div:first-child')?.textContent || '1';
+                        result.count = parseFloat(utils.cleanNumber(countText)) || 1;
+                    } else if (isRequirement) {
+                        const requirementRow = element.closest('.SkillActionDetail_itemRequirements__3SPnA');
+                        const allCounts = requirementRow?.querySelectorAll('.SkillActionDetail_inputCount__1rdrn');
+                        const itemElements = requirementRow?.querySelectorAll('.Item_itemContainer__x7kH1');
+                        let itemIndex = 0;
+                        if (itemElements) {
+                            for (let i = 0; i < itemElements.length; i++) {
+                                if (itemElements[i].contains(element)) {
+                                    itemIndex = i;
+                                    break;
+                                }
+                            }
+                        }
+                        const countElement = allCounts ? allCounts[itemIndex] : null;
+                        const rawText = countElement?.textContent || '1';
+                        const cleanText = rawText.replace(/[^\\d.,]/g, '');
+                        result.count = parseFloat(utils.cleanNumber(cleanText)) || 1;
+                    }
+
+                    return result;
+                }
+
+                getActionTime() {
+                    const timeElement = document.querySelector('.SkillActionDetail_value__dQjYH');
+                    if (!timeElement) return 0;
+                    const timeText = timeElement.textContent;
+                    const timeMatch = timeText.match(/([\\d.]+)s/);
+                    if (timeMatch) return parseFloat(timeMatch[1]);
+                    const allTimeElements = document.querySelectorAll('.SkillActionDetail_value__dQjYH');
+                    for (let i = allTimeElements.length - 1; i >= 0; i--) {
+                        const text = allTimeElements[i].textContent;
+                        if (text.includes('s') && !text.includes('%')) {
+                            const match = text.match(/([\\d.]+)s/);
+                            if (match) return parseFloat(match[1]);
+                        }
+                    }
+                    return 0;
+                }
+
+                parseDropRate(itemHrid) {
+                    try {
+                        const dropElements = document.querySelectorAll('.SkillActionDetail_drop__26KBZ');
+                        for (const dropElement of dropElements) {
+                            const itemElement = dropElement.querySelector('.Item_itemContainer__x7kH1 svg use');
+                            if (itemElement) {
+                                const href = itemElement.getAttribute('href');
+                                const dropItemHrid = href ? \`/items/\${href.split('#')[1]}\` : null;
+                                if (dropItemHrid === itemHrid) {
+                                    const rateText = dropElement.textContent.match(/~?([\\d.]+)%/);
+                                    if (rateText) {
+                                        return parseFloat(rateText[1]) / 100;
+                                    }
+                                }
+                            }
+                        }
+                    } catch (error) {
+                        console.error('解析掉落率失败:', error);
+                    }
+                    return null;
+                }
+
+                hasNullPrices(data, useOptimistic) {
+                    const checkItems = (items) => items.some(item =>
+                        (useOptimistic ? item.bids : item.asks) === null ||
+                        (useOptimistic ? item.bids : item.asks) <= 0
+                    );
+                    const checkDrinks = (drinks) => drinks.some(drink =>
+                        (useOptimistic ? drink.bids : drink.asks) === null ||
+                        (useOptimistic ? drink.bids : drink.asks) <= 0
+                    );
+                    return checkItems(data.requirements) || checkItems(data.outputs) ||
+                        checkItems(data.upgrades || []) || checkDrinks(data.drinkCosts || []);
+                }
+
+                async getActionData() {
+                    const container = document.querySelector('.SkillActionDetail_regularComponent__3oCgr');
+                    if (!container) return null;
+
+                    const reqElements = [...container.querySelectorAll('.SkillActionDetail_itemRequirements__3SPnA .Item_itemContainer__x7kH1')];
+                    const outputElements = [...container.querySelectorAll('.SkillActionDetail_outputItems__3zp_f .Item_itemContainer__x7kH1')];
+                    const dropElements = [...container.querySelectorAll('.SkillActionDetail_dropTable__3ViVp .Item_itemContainer__x7kH1')];
+                    const upgradeElements = [...container.querySelectorAll('.SkillActionDetail_upgradeItemSelectorInput__2mnS0 .Item_itemContainer__x7kH1')];
+
+                    const [requirements, outputs, drops, upgrades, buffData] = await Promise.all([
+                        Promise.all(reqElements.map(el => this.getItemData(el, false, true, false))),
+                        Promise.all(outputElements.map(el => this.getItemData(el, true, false, false))),
+                        Promise.all(dropElements.map(el => this.getItemData(el, false, false, false))),
+                        Promise.all(upgradeElements.map(el => this.getItemData(el, false, false, true))),
+                        this.calculateBuffEffectsAndCosts()
+                    ]);
+
+                    const actionTime = this.getActionTime();
+
+                    return {
+                        actionTime,
+                        efficiency: buffData.efficiency,
+                        drinkCosts: buffData.drinkCosts,
+                        requirements: requirements.filter(Boolean),
+                        outputs: outputs.filter(Boolean),
+                        drops: drops.filter(Boolean),
+                        upgrades: upgrades.filter(Boolean)
+                    };
+                }
+
+                calculateProfit(data, useOptimistic) {
+                    if (this.hasNullPrices(data, useOptimistic)) return null;
+                    if (data.actionTime <= 0) return null;
+
+                    let totalCost = 0;
+                    data.requirements.forEach(item => {
+                        const price = useOptimistic ? item.bids : item.asks;
+                        totalCost += price * item.count;
+                    });
+
+                    if (data.upgrades.length > 0) {
+                        data.upgrades.forEach(item => {
+                            const price = useOptimistic ? item.bids : item.asks;
+                            totalCost += price * item.count;
+                        });
+                    }
+
+                    const effectiveTime = data.actionTime / (1 + data.efficiency);
+
+                    let totalIncome = 0;
+                    data.outputs.forEach(item => {
+                        const price = useOptimistic ? item.asks : item.bids;
+                        let income = price * item.count;
+                        if (item.itemHrid !== '/items/coin') {
+                            income *= 0.98; // 市场税费
+                        }
+                        totalIncome += income;
+                    });
+
+                    if (data.drops.length > 0) {
+                        data.drops.forEach(item => {
+                            const price = useOptimistic ? item.asks : item.bids;
+                            const dropRate = this.parseDropRate(item.itemHrid) || 0.05;
+                            let income = price * (item.count || 1) * dropRate;
+                            if (item.itemHrid !== '/items/coin') {
+                                income *= 0.98;
+                            }
+                            totalIncome += income;
+                        });
+                    }
+
+                    const profitPerAction = totalIncome - totalCost;
+                    const profitPerSecond = (profitPerAction * (1 + data.efficiency)) / data.actionTime;
+
+                    let drinkCostPerSecond = 0;
+                    if (data.drinkCosts.length > 0) {
+                        const totalDrinkCost = data.drinkCosts.reduce((sum, item) => {
+                            const price = useOptimistic ? item.bids : item.asks;
+                            return sum + price;
+                        }, 0);
+                        drinkCostPerSecond = totalDrinkCost / 300;
+                    }
+
+                    const finalProfitPerSecond = profitPerSecond - drinkCostPerSecond;
+                    const dailyProfit = finalProfitPerSecond * 86400;
+                    return Math.round(dailyProfit);
+                }
+
+                getStateFingerprint() {
+                    const container = document.querySelector('.SkillActionDetail_regularComponent__3oCgr');
+                    if (!container) return '';
+
+                    const requirements = container.querySelector('.SkillActionDetail_itemRequirements__3SPnA')?.textContent || '';
+                    const outputs = container.querySelector('.SkillActionDetail_outputItems__3zp_f')?.textContent || '';
+                    const upgrades = container.querySelector('.SkillActionDetail_upgradeItemSelectorInput__2mnS0')?.textContent || '';
+                    const timeText = this.getActionTime().toString();
+
+                    const props = utils.getReactProps(container);
+                    const buffsText = props?.actionBuffs ? JSON.stringify(props.actionBuffs.map(b => b.uniqueHrid)) : '';
+
+                    const consumables = document.querySelectorAll('.ActionTypeConsumableSlots_consumableSlots__kFKk0 .Item_itemContainer__x7kH1');
+                    const consumablesText = Array.from(consumables).map(el =>
+                        el.querySelector('svg use')?.getAttribute('href') || 'empty'
+                    ).join('|');
+
+                    return \`\${requirements}|\${outputs}|\${upgrades}|\${timeText}|\${buffsText}|\${consumablesText}\`;
+                }
+
+                setupUI() {
+                    const container = document.querySelector('.SkillActionDetail_regularComponent__3oCgr');
+                    const existingDisplay = document.getElementById('universal-action-profit-display');
+
+                    const shouldShow = container &&
+                                    (container.querySelector('.SkillActionDetail_itemRequirements__3SPnA') ||
+                                        container.querySelector('.SkillActionDetail_upgradeItemSelectorInput__2mnS0')) &&
+                                    container.querySelector('.SkillActionDetail_outputItems__3zp_f') &&
+                                    !container.querySelector('.SkillActionDetail_alchemyComponent__1J55d');
+
+                    if (shouldShow && !existingDisplay) {
+                        const profitDisplay = this.createProfitDisplay();
+                        const infoContainer = container.querySelector('.SkillActionDetail_info__3umoI');
+                        if (infoContainer) {
+                            infoContainer.parentNode.insertBefore(profitDisplay, infoContainer.nextSibling);
+                        } else {
+                            const contentContainer = container.querySelector('.SkillActionDetail_content__1MbXv');
+                            if (contentContainer) {
+                                contentContainer.appendChild(profitDisplay);
+                            }
+                        }
+                        this.lastState = this.getStateFingerprint();
+                        setTimeout(() => this.updateProfitDisplay(), 100);
+                    } else if (!shouldShow && existingDisplay) {
+                        existingDisplay.remove();
+                    }
+                }
+            }
+
+            // 炼金利润计算器
+            class AlchemyProfitCalculator extends BaseProfitCalculator {
+                constructor(api) {
+                    super(api, CONFIG.ALCHEMY_CACHE_EXPIRY);
+                }
+
+                getContainerId() { return 'alchemy-profit-display'; }
+                getPessimisticId() { return 'pessimistic-profit'; }
+                getOptimisticId() { return 'optimistic-profit'; }
+                getWaitingText() { return LANG.waitingAPI; }
+
+                async getItemData(el, dropIndex = -1, reqIndex = -1) {
+                    const href = el?.querySelector('svg use')?.getAttribute('href');
+                    const itemHrid = href ? \`/items/\${href.split('#')[1]}\` : null;
+                    if (!itemHrid) return null;
+
+                    let enhancementLevel = 0;
+                    if (reqIndex >= 0) {
+                        const enhancementEl = el.querySelector('.Item_enhancementLevel__19g-e');
+                        if (enhancementEl) {
+                            const match = enhancementEl.textContent.match(/\\+(\\d+)/);
+                            enhancementLevel = match ? parseInt(match[1]) : 0;
+                        }
+                    }
+
+                    let asks = 0, bids = 0;
+                    if (itemHrid === '/items/coin') {
+                        asks = bids = 1;
+                    } else {
+                        const orderBooks = await this.getMarketData(itemHrid);
+                        if (orderBooks?.[enhancementLevel]) {
+                            const { asks: asksList, bids: bidsList } = orderBooks[enhancementLevel];
+                            if (reqIndex >= 0) {
+                                asks = asksList?.length > 0 ? asksList[0].price : null;
+                                bids = bidsList?.length > 0 ? bidsList[0].price : null;
+                            } else {
+                                asks = asksList?.[0]?.price || 0;
+                                bids = bidsList?.[0]?.price || 0;
+                            }
+                        } else {
+                            asks = bids = reqIndex >= 0 ? null : orderBooks ? -1 : 0;
+                        }
+                    }
+
+                    const result = { itemHrid, asks, bids, enhancementLevel };
+
+                    if (reqIndex >= 0) {
+                        const countEl = document.querySelectorAll('.SkillActionDetail_itemRequirements__3SPnA .SkillActionDetail_inputCount__1rdrn')[reqIndex];
+                        const rawCountText = countEl?.textContent || '1';
+                        result.count = parseInt(utils.cleanNumber(rawCountText)) || 1;
+                    } else if (dropIndex >= 0) {
+                        const dropEl = document.querySelectorAll('.SkillActionDetail_drop__26KBZ')[dropIndex];
+                        const text = dropEl?.textContent || '';
+                        const countMatch = text.match(/^([\\d\\s,.]+)/);
+                        const rawCountText = countMatch?.[1] || '1';
+                        result.count = parseInt(utils.cleanNumber(rawCountText)) || 1;
+                        const rateMatch = text.match(/([\\d,.]+)%/);
+                        const rawRateText = rateMatch?.[1] || '100';
+                        result.dropRate = parseFloat(utils.cleanNumber(rawRateText)) / 100 || 1;
+                    }
+
+                    return result;
+                }
+
+                calculateEfficiencyAndDrinkCosts() {
+                    const container = document.querySelector('.SkillActionDetail_alchemyComponent__1J55d');
+                    const props = utils.getReactProps(container);
+                    if (!props) return { efficiency: 0, drinkCosts: [] };
+
+                    const buffs = props.actionBuffs || [];
+                    const baseAlchemyLevel = props.characterSkillMap?.get('/skills/alchemy')?.level || 0;
+
+                    let requiredLevel = 0;
+                    const notesEl = document.querySelector('.SkillActionDetail_notes__2je2F');
+                    if (notesEl) {
+                        const match = notesEl.childNodes[0]?.textContent?.match(/\\d+/);
+                        requiredLevel = match ? parseInt(match[0]) : 0;
+                    }
+
+                    let efficiencyBuff = 0;
+                    let alchemyLevelBonus = 0;
+
+                    for (const buff of buffs) {
+                        if (buff.typeHrid === '/buff_types/efficiency') {
+                            efficiencyBuff += buff.flatBoost || 0;
+                        }
+                        if (buff.typeHrid === '/buff_types/alchemy_level') {
+                            alchemyLevelBonus += buff.flatBoost || 0;
+                        }
+                    }
+
+                    const finalAlchemyLevel = baseAlchemyLevel + alchemyLevelBonus;
+                    const levelEfficiencyBonus = Math.max(0, (finalAlchemyLevel - requiredLevel) / 100);
+                    const totalEfficiency = efficiencyBuff + levelEfficiencyBonus;
+
+                    const drinkCosts = this.getDrinkCosts();
+                    return { efficiency: totalEfficiency, drinkCosts: drinkCosts };
+                }
+
+                getDrinkCosts() {
+                    const drinkCosts = [];
+                    const consumableElements = [...document.querySelectorAll('.ActionTypeConsumableSlots_consumableSlots__kFKk0 .Item_itemContainer__x7kH1')];
+                    for (const element of consumableElements) {
+                        const href = element?.querySelector('svg use')?.getAttribute('href');
+                        const itemHrid = href ? \`/items/\${href.split('#')[1]}\` : null;
+                        if (itemHrid && itemHrid !== '/items/coin') {
+                            drinkCosts.push({ itemHrid: itemHrid, asks: 0, bids: 0 });
+                        }
+                    }
+                    return drinkCosts;
+                }
+
+                hasNullPrices(data, useOptimistic) {
+                    const checkItems = (items) => items.some(item =>
+                        (useOptimistic ? item.bids : item.asks) === null
+                    );
+                    return checkItems(data.requirements) ||
+                        checkItems(data.drops) ||
+                        checkItems(data.consumables) ||
+                        (useOptimistic ? data.catalyst.bids : data.catalyst.asks) === null;
+                }
+
+                async getActionData() {
+                    const getValue = sel => {
+                        const element = document.querySelector(sel);
+                        const rawText = element?.textContent || '0';
+                        return parseFloat(utils.cleanNumber(rawText));
+                    };
+
+                    const successRate = getValue('.SkillActionDetail_successRate__2jPEP .SkillActionDetail_value__dQjYH') / 100;
+                    const timeCost = getValue('.SkillActionDetail_timeCost__1jb2x .SkillActionDetail_value__dQjYH');
+
+                    if (!successRate || !timeCost) return null;
+
+                    const reqEls = [...document.querySelectorAll('.SkillActionDetail_itemRequirements__3SPnA .Item_itemContainer__x7kH1')];
+                    const dropEls = [...document.querySelectorAll('.SkillActionDetail_dropTable__3ViVp .Item_itemContainer__x7kH1')];
+                    const consumEls = [...document.querySelectorAll('.ActionTypeConsumableSlots_consumableSlots__kFKk0 .Item_itemContainer__x7kH1')];
+                    const catalystEl = document.querySelector('.SkillActionDetail_catalystItemInputContainer__5zmou .ItemSelector_itemContainer__3olqe') ||
+                                    document.querySelector('.SkillActionDetail_catalystItemInputContainer__5zmou .SkillActionDetail_itemContainer__2TT5f');
+
+                    const [requirements, drops, consumables, catalyst] = await Promise.all([
+                        Promise.all(reqEls.map((el, i) => this.getItemData(el, -1, i))),
+                        Promise.all(dropEls.map((el, i) => this.getItemData(el, i))),
+                        Promise.all(consumEls.map(el => this.getItemData(el))),
+                        catalystEl ? this.getItemData(catalystEl) : Promise.resolve({ asks: 0, bids: 0 })
+                    ]);
+
+                    const efficiencyData = this.calculateEfficiencyAndDrinkCosts();
+
+                    return {
+                        successRate, 
+                        timeCost,
+                        efficiency: efficiencyData.efficiency,
+                        requirements: requirements.filter(Boolean),
+                        drops: drops.filter(Boolean),
+                        catalyst: catalyst || { asks: 0, bids: 0 },
+                        consumables: consumables.filter(Boolean),
+                        drinkCosts: efficiencyData.drinkCosts
+                    };
+                }
+
+                calculateProfit(data, useOptimistic) {
+                    if (this.hasNullPrices(data, useOptimistic)) return null;
+
+                    const totalReqCost = data.requirements.reduce((sum, item) => {
+                        const price = useOptimistic ? item.bids : item.asks;
+                        return sum + price * item.count;
+                    }, 0);
+
+                    const catalystPrice = useOptimistic ? data.catalyst.bids : data.catalyst.asks;
+                    const costPerAttempt = totalReqCost * (1 - data.successRate) + (totalReqCost + catalystPrice) * data.successRate;
+
+                    const incomePerAttempt = data.drops.reduce((sum, drop) => {
+                        const price = useOptimistic ? drop.asks : drop.bids;
+                        let income = price * drop.dropRate * drop.count * data.successRate;
+                        if (drop.itemHrid !== '/items/coin') {
+                            income *= 0.98;
+                        } 
+                        return sum + income;
+                    }, 0);
+
+                    const netProfitPerAttempt = incomePerAttempt - costPerAttempt;
+                    const profitPerSecond = (netProfitPerAttempt * (1 + data.efficiency)) / data.timeCost;
+
+                    let drinkCostPerSecond = 0;
+                    if (data.drinkCosts && data.drinkCosts.length > 0) {
+                        const totalDrinkCost = data.drinkCosts.reduce((sum, drinkInfo) => {
+                            const consumableData = data.consumables.find(c => c.itemHrid === drinkInfo.itemHrid);
+                            if (consumableData) {
+                                const price = useOptimistic ? consumableData.bids : consumableData.asks;
+                                return sum + price;
+                            }
+                            return sum;
+                        }, 0);
+                        drinkCostPerSecond = totalDrinkCost / 300;
+                    }
+
+                    const finalProfitPerSecond = profitPerSecond - drinkCostPerSecond;
+                    const dailyProfit = finalProfitPerSecond * 86400;
+                    return Math.round(dailyProfit);
+                }
+
+                getStateFingerprint() {
+                    const consumables = document.querySelectorAll('.ActionTypeConsumableSlots_consumableSlots__kFKk0 .Item_itemContainer__x7kH1');
+                    const successRate = document.querySelector('.SkillActionDetail_successRate__2jPEP .SkillActionDetail_value__dQjYH')?.textContent || '';
+                    const consumablesState = Array.from(consumables).map(el =>
+                        el.querySelector('svg use')?.getAttribute('href') || 'empty').join('|');
+                    return \`\${consumablesState}:\${successRate}\`;
+                }
+
+                setupUI() {
+                    // 炼金界面的UI设置逻辑
+                    const container = document.querySelector('.SkillActionDetail_alchemyComponent__1J55d');
+                    const existingDisplay = document.getElementById('alchemy-profit-display');
+
+                    if (container && !existingDisplay) {
+                        const profitDisplay = this.createProfitDisplay();
+                        // 炼金界面特定的插入位置
+                        const infoContainer = container.querySelector('.SkillActionDetail_info__3umoI');
+                        if (infoContainer) {
+                            infoContainer.parentNode.insertBefore(profitDisplay, infoContainer.nextSibling);
+                        }
+                        this.lastState = this.getStateFingerprint();
+                        setTimeout(() => this.updateProfitDisplay(), 100);
+                    } else if (!container && existingDisplay) {
+                        existingDisplay.remove();
+                    }
+                }
+            }
+            
             // 一体化购物车管理器
             class ShoppingCartManager {
                 constructor() {
@@ -456,7 +1221,6 @@
                     return true;
                 }
 
-
                 // 购物车抽屉创建方法
                 createCartDrawer() {
                     this.cartContainer = document.createElement('div');
@@ -476,7 +1240,7 @@
                         backdropFilter: 'blur(10px)',
                         boxShadow: '-4px 0 20px rgba(0,0,0,0.3)',
                         zIndex: '9999',
-                        transform: 'translateX(380px)', // 调整隐藏位置
+                        transform: 'translateX(380px)',
                         transition: 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
                         display: 'flex',
                         flexDirection: 'column',
@@ -622,7 +1386,7 @@
                             </div>
                         </div>
 
-                        <!-- 购物车内容 -->
+                        <!-- 其他购物车内容 -->
                         <div id="cart-items-container" style="
                             flex: 1;
                             overflow-y: auto;
@@ -1600,418 +2364,578 @@
                 hookMessage(messageType, callback) { return window.AutoBuyAPI.hookMessage(messageType, callback); }
             }
 
-            // 炼金利润计算器
-            class AlchemyProfitCalculator {
-                constructor(api) {
-                    this.api = api;
-                    this.marketData = {};
-                    this.marketTimestamps = {};
-                    this.requestQueue = [];
-                    this.isProcessing = false;
-                    this.lastState = '';
-                    this.updateTimeout = null;
-                    this.initialized = false;
+            // 炼金利润计算器（保持原代码不变）
 
+            // UI管理器（整合所有功能）
+            class UIManager {
+                constructor() {
+                    this.toast = new Toast();
+                    this.api = new AutoBuyAPI();
+                    this.autoStopManager = new AutoStopManager();
+                    this.alchemyCalculator = new AlchemyProfitCalculator(this.api);
+                    this.universalCalculator = new UniversalActionProfitCalculator(this.api); // 新增通用计算器
+                    this.shoppingCart = new ShoppingCartManager();
+                    this.observer = null;
+                    this.loggerReady = false;
+                    this.alchemyObservers = [];
+                    // 将实例暴露给全局
+                    window.uiManager = this;
                     this.init();
                 }
 
                 async init() {
-                    // 等待API就绪
-                    while (!window.AutoBuyAPI?.core || !this.api.isReady) {
-                        await utils.delay(100);
-                    }
+                    addGlobalButtonStyles();
+                    await utils.delay(1000);
+                    await this.checkLoggerAndInit();
+                    this.setupEasterEgg();
+                }
 
-                    try {
-                        // 监听市场订单簿更新事件
-                        window.AutoBuyAPI.hookMessage("market_item_order_books_updated", obj => {
-                            const { itemHrid, orderBooks } = obj.marketItemOrderBooks;
-                            this.marketData[itemHrid] = orderBooks;
-                            this.marketTimestamps[itemHrid] = Date.now();
+                setupEasterEgg() {
+                    const keys = 'ArrowUp,ArrowUp,ArrowDown,ArrowDown,ArrowLeft,ArrowRight,ArrowLeft,ArrowRight,b,a'.split(',');
+                    const pressed = [];
+                    const handler = e => {
+                        pressed.push(e.key);
+                        if (pressed.length > keys.length) pressed.shift();
+                        if (keys.every((v, i) => v === pressed[i])) {
+                            removeEventListener('keydown', handler);
+                            this.toast.show('Keep this between us. Shhh...', 'success', 7000);
+                        }
+                    };
+                    addEventListener('keydown', handler);
+                }
+
+                async checkLoggerAndInit() {
+                    while (true) {
+                        try {
+                            const result = await this.api.checkAPI();
+                            if (result.available && result.core_ready) {
+                                this.loggerReady = true;
+                                this.initObserver();
+                                break;
+                            }
+                        } catch {}
+
+                        await utils.delay(CONFIG.DELAYS.API_CHECK);
+                    }
+                }
+
+                // 炼金UI管理
+                setupAlchemyUI() {  
+                    const alchemyComponent = document.querySelector('.SkillActionDetail_alchemyComponent__1J55d');
+                    const instructionsEl = document.querySelector('.SkillActionDetail_instructions___EYV5');
+                    const infoContainer = document.querySelector('.SkillActionDetail_info__3umoI');
+                    const existingDisplay = document.getElementById('alchemy-profit-display');
+
+                    const shouldShow = alchemyComponent && !instructionsEl && infoContainer;
+
+                    if (shouldShow && !existingDisplay) {
+                        const container = this.alchemyCalculator.createProfitDisplay();
+                        infoContainer.appendChild(container);
+
+                        this.alchemyCalculator.lastState = this.alchemyCalculator.getStateFingerprint();
+
+                        // 清理旧的观察器并设置新的
+                        this.alchemyObservers.forEach(obs => obs?.disconnect());
+                        this.alchemyObservers = [
+                            this.setupObserver('.ActionTypeConsumableSlots_consumableSlots__kFKk0', () => {
+                                const currentState = this.alchemyCalculator.getStateFingerprint();
+                                if (currentState !== this.alchemyCalculator.lastState) {
+                                    this.alchemyCalculator.lastState = currentState;
+                                    this.alchemyCalculator.debounceUpdate(() => this.alchemyCalculator.updateProfitDisplay());
+                                }
+                            }),
+                            this.setupObserver('.SkillActionDetail_successRate__2jPEP .SkillActionDetail_value__dQjYH', () => {
+                                const currentState = this.alchemyCalculator.getStateFingerprint();
+                                if (currentState !== this.alchemyCalculator.lastState) {
+                                    this.alchemyCalculator.lastState = currentState;
+                                    this.alchemyCalculator.debounceUpdate(() => this.alchemyCalculator.updateProfitDisplay());
+                                }
+                            }, { characterData: true })
+                        ].filter(Boolean);
+
+                        setTimeout(() => this.alchemyCalculator.updateProfitDisplay(), this.alchemyCalculator.initialized ? 50 : 100);
+                    } else if (!shouldShow && existingDisplay) {
+                        existingDisplay.remove();
+                        this.alchemyObservers.forEach(obs => obs?.disconnect());
+                        this.alchemyObservers = [];
+                    }
+                }
+
+                // 设置通用利润计算器UI
+                setupUniversalCalculatorUI() {
+                    this.universalCalculator.setupUI();
+                }
+
+                // 检查通用利润计算器更新
+                checkUniversalCalculatorUpdates() {
+                    this.universalCalculator.checkForUpdates();
+                }
+
+                initObserver() {
+                    if (this.observer) return;
+
+                    this.observer = new MutationObserver((mutationsList) => {
+                        Object.keys(SELECTORS).forEach(type => {
+                            if (type !== 'alchemy') this.setupUI(type);
                         });
+                        // 检查炼金UI
+                        this.setupAlchemyUI();
+                        // 检查通用计算器UI
+                        this.setupUniversalCalculatorUI();
+                        // 检查自动停止UI
+                        this.autoStopManager.injectAutoStopUI();
+                        // 检查市场按钮
+                        this.handleMarketCartButton(mutationsList);
+                    });
 
-                        this.initialized = true;
-                    } catch (error) {
-                        console.error(\`%c\${LANG.loadFailed}\`, 'color: #F44336; font-weight: bold;', error);
-                    }
+                    this.observer.observe(document.body, { childList: true, subtree: true });
 
-                    // 定期清理过期缓存
-                    setInterval(() => this.cleanCache(), 60000);
-                }
-
-                cleanCache() {
-                    const now = Date.now();
-                    Object.keys(this.marketTimestamps).forEach(item => {
-                        if (now - this.marketTimestamps[item] > CONFIG.ALCHEMY_CACHE_EXPIRY) {
-                            delete this.marketData[item];
-                            delete this.marketTimestamps[item];
+                    // 输入监听
+                    let updateTimer = null;
+                    document.addEventListener('input', (e) => {
+                        if (e.target.classList.contains('Input_input__2-t98')) {
+                            clearTimeout(updateTimer);
+                            updateTimer = setTimeout(() => {
+                                this.updateInfoSpans('enhancing');
+                                this.updateInfoSpans('production');
+                            }, 1);
                         }
                     });
-                }
 
-                async processQueue() {
-                    if (this.isProcessing || !this.requestQueue.length || !this.initialized || !window.AutoBuyAPI?.core) return;
-                    this.isProcessing = true;
+                    document.addEventListener('click', (e) => {
+                        if (e.target.classList) {
+                            clearTimeout(updateTimer);
+                            updateTimer = setTimeout(() => {
+                                this.updateInfoSpans('enhancing');
+                                this.updateInfoSpans('production');
+                            }, 1);
 
-                    while (this.requestQueue.length > 0) {
-                        const batch = this.requestQueue.splice(0, 6);
-                        await Promise.all(batch.map(async ({ itemHrid, resolve }) => {
-                            if (this.marketData[itemHrid] && !utils.isCacheExpired(itemHrid, this.marketTimestamps)) {
-                                return resolve(this.marketData[itemHrid]);
-                            }
-
-                            if (utils.isCacheExpired(itemHrid, this.marketTimestamps)) {
-                                delete this.marketData[itemHrid];
-                                delete this.marketTimestamps[itemHrid];
-                            }
-
-                            try {
-                                window.AutoBuyAPI.core.handleGetMarketItemOrderBooks(itemHrid);
-                            } catch (error) {
-                                console.error('炼金API调用失败:', error);
-                            }
-
-                            const start = Date.now();
-                            await new Promise(waitResolve => {
-                                const check = setInterval(() => {
-                                    if (this.marketData[itemHrid] || Date.now() - start > 5000) {
-                                        clearInterval(check);
-                                        resolve(this.marketData[itemHrid] || null);
-                                        waitResolve();
+                            // 检查是否需要更新炼金显示
+                            if (e.target.closest('.AlchemyPanel_alchemyPanel__1Sa8_ .MuiTabs-flexContainer') ||
+                                e.target.closest('[class*="ItemSelector"]') ||
+                                e.target.closest('.Item_itemContainer__x7kH1') ||
+                                e.target.closest('[class*="SkillAction"]') ||
+                                e.target.closest('.MuiPopper-root.MuiTooltip-popper.MuiTooltip-popperInteractive.css-w9tg40')) {
+                                setTimeout(() => {
+                                    if (document.getElementById('alchemy-profit-display')) {
+                                        this.alchemyCalculator.debounceUpdate(() => this.alchemyCalculator.updateProfitDisplay());
                                     }
-                                }, 50);
-                            });
-                        }));
+                                }, 1);
+                            }
 
-                        if (this.requestQueue.length > 0) await utils.delay(100);
-                    }
-                    this.isProcessing = false;
-                }
-
-                getMarketData(itemHrid) {
-                    return new Promise(resolve => {
-                        if (this.marketData[itemHrid] && !utils.isCacheExpired(itemHrid, this.marketTimestamps)) {
-                            return resolve(this.marketData[itemHrid]);
+                            // 检查通用计算器更新
+                            if (e.target.closest('.SkillActionDetail_regularComponent__3oCgr') ||
+                                e.target.closest('[class*="ItemSelector"]') ||
+                                e.target.closest('.Item_itemContainer__x7kH1') ||
+                                e.target.closest('.ActionTypeConsumableSlots_consumableSlots__kFKk0')) {
+                                setTimeout(() => {
+                                    this.setupUniversalCalculatorUI();
+                                    this.checkUniversalCalculatorUpdates();
+                                }, 100);
+                            }
                         }
-                        if (!this.initialized || !window.AutoBuyAPI?.core) {
-                            return resolve(null);
-                        }
+                    });
 
-                        this.requestQueue.push({ itemHrid, resolve });
-                        this.processQueue();
+                    // 初始设置
+                    Object.keys(SELECTORS).forEach(type => {
+                        if (type !== 'alchemy') this.setupUI(type);
+                    });
+                    this.setupAlchemyUI();
+                    this.setupUniversalCalculatorUI();
+
+                    // 自动停止UI观察器
+                    let frameId = null;
+                    const scheduleUICheck = () => {
+                        if (frameId) cancelAnimationFrame(frameId);
+                        frameId = requestAnimationFrame(() => {
+                            this.autoStopManager.injectAutoStopUI();
+                            frameId = null;
+                        });
+                    };
+
+                    new MutationObserver(mutations => {
+                        for (const mutation of mutations) {
+                            if (mutation.type === 'childList') {
+                                for (const node of mutation.addedNodes) {
+                                    if (node.nodeType === Node.ELEMENT_NODE &&
+                                        (node.classList?.contains('SkillActionDetail_regularComponent__3oCgr') ||
+                                        node.querySelector?.('.SkillActionDetail_regularComponent__3oCgr') ||
+                                        node.classList?.contains('SkillActionDetail_maxActionCountInput__1C0Pw'))) {
+                                        scheduleUICheck();
+                                        return;
+                                    }
+                                }
+                            }
+                        }
+                    }).observe(document.body, { childList: true, subtree: true });
+
+                    // 设置输入事件监听器（为通用计算器）
+                    document.addEventListener('input', () => {
+                        setTimeout(() => this.checkUniversalCalculatorUpdates(), 100);
                     });
                 }
 
-                async getItemData(el, dropIndex = -1, reqIndex = -1) {
-                    const href = el?.querySelector('svg use')?.getAttribute('href');
-                    const itemHrid = href ? \`/items/\${href.split('#')[1]}\` : null;
-                    if (!itemHrid) {
-                        return null;
-                    }
+                // 统一按钮创建方法
+                createUnifiedButton(text, onClick, buttonType) {
+                    const btn = document.createElement("button");
+                    btn.textContent = text;
+                    btn.className = 'unified-action-btn';
+                    btn.setAttribute('data-button-type', buttonType);
 
-                    let enhancementLevel = 0;
-                    if (reqIndex >= 0) {
-                        const enhancementEl = el.querySelector('.Item_enhancementLevel__19g-e');
-                        if (enhancementEl) {
-                            const match = enhancementEl.textContent.match(/\\+(\\d+)/);
-                            enhancementLevel = match ? parseInt(match[1]) : 0;
-                        }
-                    }
+                    // 应用统一样式
+                    this.shoppingCart.applyUnifiedButtonStyle(btn, buttonType);
 
-                    let asks = 0, bids = 0;
-                    if (itemHrid === '/items/coin') {
-                        asks = bids = 1;
-                    } else {
-                        const orderBooks = await this.getMarketData(itemHrid);
-                        if (orderBooks?.[enhancementLevel]) {
-                            const { asks: asksList, bids: bidsList } = orderBooks[enhancementLevel];
-                            if (reqIndex >= 0) {
-                                asks = asksList?.length > 0 ? asksList[0].price : null;
-                                bids = bidsList?.length > 0 ? bidsList[0].price : null;
-                            } else {
-                                asks = asksList?.[0]?.price || 0;
-                                bids = bidsList?.[0]?.price || 0;
-                            }
-                        } else {
-                            asks = bids = reqIndex >= 0 ? null : orderBooks ? -1 : 0;
-                        }
-                    }
+                    btn.addEventListener("click", () => this.handleButtonClick(btn, text, onClick, buttonType));
 
-                    const result = { itemHrid, asks, bids, enhancementLevel };
-
-                    if (reqIndex >= 0) {
-                        const countEl = document.querySelectorAll('.SkillActionDetail_itemRequirements__3SPnA .SkillActionDetail_inputCount__1rdrn')[reqIndex];
-                        const rawCountText = countEl?.textContent || '1';
-                        result.count = parseInt(utils.cleanNumber(rawCountText)) || 1;
-                    } else if (dropIndex >= 0) {
-                        const dropEl = document.querySelectorAll('.SkillActionDetail_drop__26KBZ')[dropIndex];
-                        const text = dropEl?.textContent || '';
-                        const countMatch = text.match(/^([\\d\\s,.]+)/);
-                        const rawCountText = countMatch?.[1] || '1';
-                        result.count = parseInt(utils.cleanNumber(rawCountText)) || 1;
-
-                        const rateMatch = text.match(/([\\d,.]+)%/);
-                        const rawRateText = rateMatch?.[1] || '100';
-                        result.dropRate = parseFloat(utils.cleanNumber(rawRateText)) / 100 || 1;
-                    }
-
-                    return result;
+                    return btn;
                 }
 
-                calculateEfficiencyAndDrinkCosts() {
-                    const container = document.querySelector('.SkillActionDetail_alchemyComponent__1J55d');
-                    const props = utils.getReactProps(container);
-                    if (!props) return { efficiency: 0, drinkCosts: [] };
-
-                    const buffs = props.actionBuffs || [];
-
-                    // 获取基础炼金等级
-                    const baseAlchemyLevel = props.characterSkillMap?.get('/skills/alchemy')?.level || 0;
-
-                    // 获取配方要求等级
-                    let requiredLevel = 0;
-                    const notesEl = document.querySelector('.SkillActionDetail_notes__2je2F');
-                    if (notesEl) {
-                        const match = notesEl.childNodes[0]?.textContent?.match(/\\d+/);
-                        requiredLevel = match ? parseInt(match[0]) : 0;
-                    }
-
-                    let efficiencyBuff = 0;
-                    let alchemyLevelBonus = 0;
-
-                    console.log(\`基础炼金等级: \${baseAlchemyLevel}, 配方要求等级: \${requiredLevel}\`);
-
-                    // 分析所有buff
-                    for (const buff of buffs) {
-                        // 效率buff
-                        if (buff.typeHrid === '/buff_types/efficiency') {
-                            efficiencyBuff += buff.flatBoost || 0;
-                        }
-
-                        // 炼金等级提升buff
-                        if (buff.typeHrid === '/buff_types/alchemy_level') {
-                            alchemyLevelBonus += buff.flatBoost || 0;
-                        }
-                    }
-
-                    // 计算最终炼金等级
-                    const finalAlchemyLevel = baseAlchemyLevel + alchemyLevelBonus;
-
-                    // 计算等级效率提升
-                    const levelEfficiencyBonus = Math.max(0, (finalAlchemyLevel - requiredLevel) / 100);
-
-                    // 总效率 = 效率buff + 等级效率提升
-                    const totalEfficiency = efficiencyBuff + levelEfficiencyBonus;
-
-                    // 获取饮料消耗成本
-                    const drinkCosts = this.getDrinkCosts();
-
-                    return { 
-                        efficiency: totalEfficiency, 
-                        drinkCosts: drinkCosts
-                    };
-                }
-
-                // 获取饮料消耗成本
-                getDrinkCosts() {
-                    const drinkCosts = [];
-                    
-                    // 查找消耗品槽位中的物品
-                    const consumableElements = [...document.querySelectorAll('.ActionTypeConsumableSlots_consumableSlots__kFKk0 .Item_itemContainer__x7kH1')];
-                    
-                    for (const element of consumableElements) {
-                        const href = element?.querySelector('svg use')?.getAttribute('href');
-                        const itemHrid = href ? \`/items/\${href.split('#')[1]}\` : null;
-                        
-                        if (itemHrid && itemHrid !== '/items/coin') {
-                            drinkCosts.push({
-                                itemHrid: itemHrid,
-                                // 这里先返回0，实际价格在calculateProfit中获取
-                                asks: 0,
-                                bids: 0
-                            });
-                        }
-                    }
-                    
-                    return drinkCosts;
-                }
-
-                hasNullPrices(data, useOptimistic) {
-                    const checkItems = (items) => items.some(item =>
-                        (useOptimistic ? item.bids : item.asks) === null
-                    );
-
-                    return checkItems(data.requirements) ||
-                        checkItems(data.drops) ||
-                        checkItems(data.consumables) ||
-                        (useOptimistic ? data.catalyst.bids : data.catalyst.asks) === null;
-                }
-
-                async getAlchemyData() {
-                    const getValue = sel => {
-                        const element = document.querySelector(sel);
-                        const rawText = element?.textContent || '0';
-                        return parseFloat(utils.cleanNumber(rawText));
-                    };
-
-                    const successRate = getValue('.SkillActionDetail_successRate__2jPEP .SkillActionDetail_value__dQjYH') / 100;
-                    const timeCost = getValue('.SkillActionDetail_timeCost__1jb2x .SkillActionDetail_value__dQjYH');
-
-                    if (!successRate || !timeCost) {
-                        return null;
-                    }
-
-                    const reqEls = [...document.querySelectorAll('.SkillActionDetail_itemRequirements__3SPnA .Item_itemContainer__x7kH1')];
-                    const dropEls = [...document.querySelectorAll('.SkillActionDetail_dropTable__3ViVp .Item_itemContainer__x7kH1')];
-                    const consumEls = [...document.querySelectorAll('.ActionTypeConsumableSlots_consumableSlots__kFKk0 .Item_itemContainer__x7kH1')];
-                    const catalystEl = document.querySelector('.SkillActionDetail_catalystItemInputContainer__5zmou .ItemSelector_itemContainer__3olqe') ||
-                                    document.querySelector('.SkillActionDetail_catalystItemInputContainer__5zmou .SkillActionDetail_itemContainer__2TT5f');
-
-                    const [requirements, drops, consumables, catalyst] = await Promise.all([
-                        Promise.all(reqEls.map((el, i) => this.getItemData(el, -1, i))),
-                        Promise.all(dropEls.map((el, i) => this.getItemData(el, i))),
-                        Promise.all(consumEls.map(el => this.getItemData(el))),
-                        catalystEl ? this.getItemData(catalystEl) : Promise.resolve({ asks: 0, bids: 0 })
-                    ]);
-
-                    // 获取效率和饮料成本信息
-                    const efficiencyData = this.calculateEfficiencyAndDrinkCosts();
-
-                    const result = {
-                        successRate, 
-                        timeCost,
-                        efficiency: efficiencyData.efficiency,
-                        requirements: requirements.filter(Boolean),
-                        drops: drops.filter(Boolean),
-                        catalyst: catalyst || { asks: 0, bids: 0 },
-                        consumables: consumables.filter(Boolean),
-                        drinkCosts: efficiencyData.drinkCosts // 添加饮料成本信息
-                    };
-
-                    return result;
-                }
-
-                calculateProfit(data, useOptimistic) {
-                    if (this.hasNullPrices(data, useOptimistic)) return null;
-
-                    const profitType = useOptimistic ? '乐观' : '悲观';
-
-                    // 计算材料成本
-                    const totalReqCost = data.requirements.reduce((sum, item) => {
-                        const price = useOptimistic ? item.bids : item.asks;
-                        const cost = price * item.count;
-                        return sum + cost;
-                    }, 0);
-
-                    // 计算催化剂成本
-                    const catalystPrice = useOptimistic ? data.catalyst.bids : data.catalyst.asks;
-
-                    // 每次尝试的成本：失败时只消耗材料，成功时消耗材料+催化剂
-                    const costPerAttempt = totalReqCost * (1 - data.successRate) + (totalReqCost + catalystPrice) * data.successRate;
-
-                    // 计算产出收入
-                    const incomePerAttempt = data.drops.reduce((sum, drop) => {
-                        const price = useOptimistic ? drop.asks : drop.bids;
-                        let income = price * drop.dropRate * drop.count * data.successRate;
-                        if (drop.itemHrid !== '/items/coin') {
-                            const taxedIncome = income * 0.98; // 市场税费2%
-                            income = taxedIncome;
-                        } 
-                        return sum + income;
-                    }, 0);
-
-                    // 计算每次尝试的净利润
-                    const netProfitPerAttempt = incomePerAttempt - costPerAttempt;
-
-                    // 计算每秒基础利润（应用效率buff）
-                    const profitPerSecond = (netProfitPerAttempt * (1 + data.efficiency)) / data.timeCost;
-
-                    // 计算饮料成本（按照通用计算器的方法：每个饮料价格相加后除以300秒）
-                    let drinkCostPerSecond = 0;
-                    if (data.drinkCosts && data.drinkCosts.length > 0) {
-                        const totalDrinkCost = data.drinkCosts.reduce((sum, drinkInfo) => {
-                            // 从consumables中找到对应的价格数据
-                            const consumableData = data.consumables.find(c => c.itemHrid === drinkInfo.itemHrid);
-                            if (consumableData) {
-                                const price = useOptimistic ? consumableData.bids : consumableData.asks;
-                                return sum + price;
-                            }
-                            return sum;
-                        }, 0);
-                        drinkCostPerSecond = totalDrinkCost / 300; // 饮料持续5分钟=300秒
-                    }
-
-                    // 最终每秒利润 = 每秒基础利润 - 每秒饮料成本
-                    const finalProfitPerSecond = profitPerSecond - drinkCostPerSecond;
-
-                    const dailyProfit = finalProfitPerSecond * 86400; // 24小时 = 86400秒
-                    return Math.round(dailyProfit);
-                }
-
-                getStateFingerprint() {
-                    const consumables = document.querySelectorAll('.ActionTypeConsumableSlots_consumableSlots__kFKk0 .Item_itemContainer__x7kH1');
-                    const successRate = document.querySelector('.SkillActionDetail_successRate__2jPEP .SkillActionDetail_value__dQjYH')?.textContent || '';
-                    const consumablesState = Array.from(consumables).map(el =>
-                        el.querySelector('svg use')?.getAttribute('href') || 'empty').join('|');
-                    return \`\${consumablesState}:\${successRate}\`;
-                }
-
-                debounceUpdate(callback) {
-                    clearTimeout(this.updateTimeout);
-                    this.updateTimeout = setTimeout(callback, 200);
-                }
-
-                async updateProfitDisplay() {
-                    const [pessimisticEl, optimisticEl] = ['pessimistic-profit', 'optimistic-profit'].map(id => document.getElementById(id));
-                    if (!pessimisticEl || !optimisticEl) return;
-
-                    if (!this.initialized || !window.AutoBuyAPI?.core) {
-                        pessimisticEl.textContent = optimisticEl.textContent = LANG.waitingAPI;
-                        pessimisticEl.style.color = optimisticEl.style.color = CONFIG.COLORS.warning;
+                async handleButtonClick(btn, originalText, onClick, buttonType) {
+                    if (!this.loggerReady) {
+                        console.error(LANG.wsNotAvailable);
                         return;
                     }
 
+                    const isBidOrder = buttonType === 'bid-order';
+                    
+                    btn.disabled = true;
+                    btn.textContent = isBidOrder ? LANG.submitting : LANG.buying;
+                    
+                    // 保存原始样式
+                    const originalBg = btn.style.backgroundColor;
+                    const originalCursor = btn.style.cursor;
+                    
+                    utils.applyStyles(btn, { 
+                        backgroundColor: CONFIG.COLORS.disabled, 
+                        cursor: "not-allowed" 
+                    });
+
                     try {
-                        const data = await this.getAlchemyData();
-                        if (!data) {
-                            pessimisticEl.textContent = optimisticEl.textContent = LANG.noData;
-                            pessimisticEl.style.color = optimisticEl.style.color = CONFIG.COLORS.disabled;
-                            return;
-                        }
-
-                        [false, true].forEach((useOptimistic, index) => {
-                            const profit = this.calculateProfit(data, useOptimistic);
-                            const el = index ? optimisticEl : pessimisticEl;
-
-                            if (profit === null) {
-                                el.textContent = LANG.noData;
-                                el.style.color = CONFIG.COLORS.disabled;
-                            } else {
-                                el.textContent = utils.formatProfit(profit);
-                                el.style.color = profit >= 0 ? CONFIG.COLORS.buy : CONFIG.COLORS.sell;
-                            }
-                        });
+                        await onClick();
                     } catch (error) {
-                        console.error('炼金利润计算出错:', error);
-                        pessimisticEl.textContent = optimisticEl.textContent = LANG.error;
-                        pessimisticEl.style.color = optimisticEl.style.color = CONFIG.COLORS.warning;
+                        this.toast.show(\`\${LANG.error}: \${error.message}\`, 'error');
+                    } finally {
+                        btn.disabled = false;
+                        btn.textContent = originalText;
+                        utils.applyStyles(btn, { 
+                            backgroundColor: originalBg, 
+                            cursor: originalCursor 
+                        });
                     }
                 }
 
-                createProfitDisplay() {
-                    const container = document.createElement('div');
-                    container.id = 'alchemy-profit-display';
-                    container.style.cssText = 'display:flex;flex-direction:column;gap:10px;font-family:Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:20px;letter-spacing:0.00938em;color:var(--color-text-dark-mode);font-weight:400';
-                    container.innerHTML = \`
-                        <div style="display:flex;align-items:center;gap:8px">
-                            <span style="color:\${CONFIG.COLORS.space300}">\${LANG.pessimisticProfit}</span>
-                            <span id="pessimistic-profit" style="font-weight:400">\${this.initialized ? LANG.lodingMarketData : LANG.waitingAPI}</span>
-                        </div>
-                        <div style="display:flex;align-items:center;gap:8px">
-                            <span style="color:\${CONFIG.COLORS.space300}">\${LANG.optimisticProfit}</span>
-                            <span id="optimistic-profit" style="font-weight:400">\${this.initialized ? LANG.lodingMarketData : LANG.waitingAPI}</span>
-                        </div>
-                    \`;
-                    return container;
+                createInfoSpan() {
+                    const span = document.createElement("span");
+                    span.textContent = \`\${LANG.missing}0\`;
+                    utils.applyStyles(span, {
+                        fontSize: '12px', fontWeight: 'bold', padding: '2px 6px', borderRadius: '3px',
+                        whiteSpace: 'nowrap', minWidth: '60px', textAlign: 'center'
+                    });
+                    return span;
+                }
+
+                async updateInfoSpans(type) {
+                    const requirements = await MaterialCalculator.calculateRequirements(type);
+                    const className = \`\${type === 'house' ? 'house-' : type === 'enhancing' ? 'enhancing-' : ''}material-info-span\`;
+
+                    document.querySelectorAll(\`.\${className}\`).forEach((span, index) => {
+                        const materialReq = requirements.filter(req => req.type === 'material')[index];
+                        if (materialReq) {
+                            const needed = materialReq.supplementNeeded;
+                            span.textContent = \`\${LANG.missing}\${needed}\`;
+                            span.style.color = needed > 0 ? CONFIG.COLORS.error : CONFIG.COLORS.text;
+                        }
+                    });
+
+                    const upgradeSpan = document.querySelector('.upgrade-info-span');
+                    const upgradeReq = requirements.find(req => req.type === 'upgrade');
+                    if (upgradeSpan && upgradeReq) {
+                        const needed = upgradeReq.supplementNeeded;
+                        upgradeSpan.textContent = \`\${LANG.missing}\${needed}\`;
+                        upgradeSpan.style.color = needed > 0 ? CONFIG.COLORS.error : CONFIG.COLORS.text;
+                    }
+                }
+
+                async purchaseMaterials(type, isBidOrder = false) {
+                    if (!this.loggerReady) {
+                        this.toast.show(LANG.wsNotAvailable, 'error');
+                        return;
+                    }
+
+                    const requirements = await MaterialCalculator.calculateRequirements(type);
+                    const needToBuy = requirements.filter(item =>
+                        item.type === 'material' && item.itemId && !item.itemId.includes('coin') && item.supplementNeeded > 0
+                    );
+
+                    if (needToBuy.length === 0) {
+                        this.toast.show(LANG.sufficient, 'info');
+                        return;
+                    }
+
+                    const itemList = needToBuy.map(item =>
+                        \`\${item.materialName}: \${item.supplementNeeded}\${LANG.each}\`
+                    ).join(', ');
+
+                    this.toast.show(\`\${LANG.starting} \${needToBuy.length} \${LANG.materials}: \${itemList}\`, 'info');
+
+                    try {
+                        const purchaseItems = needToBuy.map(item => ({
+                            itemHrid: item.itemId.startsWith('/items/') ? item.itemId : \`/items/\${item.itemId}\`,
+                            quantity: item.supplementNeeded,
+                            materialName: item.materialName
+                        }));
+
+                        const results = isBidOrder ?
+                            await this.api.batchBidOrder(purchaseItems, CONFIG.DELAYS.PURCHASE) :
+                            await this.api.batchDirectPurchase(purchaseItems, CONFIG.DELAYS.PURCHASE);
+
+                        this.processResults(results, isBidOrder, type);
+
+                    } catch (error) {
+                        this.toast.show(\`\${LANG.error}: \${error.message}\`, 'error');
+                    }
+                }
+
+                async purchaseUpgrades(type, isBidOrder = false) {
+                    if (!this.loggerReady) {
+                        this.toast.show(LANG.wsNotAvailable, 'error');
+                        return;
+                    }
+
+                    const requirements = await MaterialCalculator.calculateRequirements(type);
+                    const needToBuy = requirements.filter(item =>
+                        item.type === 'upgrade' && item.itemId && !item.itemId.includes('coin') && item.supplementNeeded > 0
+                    );
+
+                    if (needToBuy.length === 0) {
+                        this.toast.show(LANG.sufficientUpgrade, 'info');
+                        return;
+                    }
+
+                    const itemList = needToBuy.map(item =>
+                        \`\${item.materialName}: \${item.supplementNeeded}\${LANG.each}\`
+                    ).join(', ');
+
+                    this.toast.show(\`\${LANG.starting} \${needToBuy.length} \${LANG.upgradeItems}: \${itemList}\`, 'info');
+
+                    try {
+                        const purchaseItems = needToBuy.map(item => ({
+                            itemHrid: item.itemId.startsWith('/items/') ? item.itemId : \`/items/\${item.itemId}\`,
+                            quantity: item.supplementNeeded,
+                            materialName: item.materialName
+                        }));
+
+                        const results = isBidOrder ?
+                            await this.api.batchBidOrder(purchaseItems, CONFIG.DELAYS.PURCHASE) :
+                            await this.api.batchDirectPurchase(purchaseItems, CONFIG.DELAYS.PURCHASE);
+
+                        this.processResults(results, isBidOrder, type);
+
+                    } catch (error) {
+                        this.toast.show(\`\${LANG.error}: \${error.message}\`, 'error');
+                    }
+                }
+
+                processResults(results, isBidOrder, type) {
+                    let successCount = 0;
+
+                    results.forEach(result => {
+                        const statusText = isBidOrder ?
+                            (result.success ? LANG.submitted : LANG.failed) :
+                            (result.success ? LANG.purchased : LANG.failed);
+
+                        const message = \`\${statusText} \${result.item.materialName || result.item.itemHrid} x\${result.item.quantity}\`;
+                        this.toast.show(message, result.success ? 'success' : 'error');
+
+                        if (result.success) successCount++;
+                    });
+
+                    const finalMessage = successCount > 0 ?
+                        \`\${LANG.complete} \${LANG.success} \${successCount}/\${results.length} \${LANG.materials}\` :
+                        LANG.allFailed;
+
+                    this.toast.show(finalMessage, successCount > 0 ? 'success' : 'error', successCount > 0 ? 5000 : 3000);
+
+                    if (successCount > 0) {
+                        setTimeout(() => this.updateInfoSpans(type), 2000);
+                    }
+                }
+
+                setupUI(type) {
+                    const configs = {
+                        production: { className: 'material-info-span', gridCols: 'auto min-content auto auto', buttonParent: 'name' },
+                        house: { className: 'house-material-info-span', gridCols: 'auto auto auto 140px', buttonParent: 'header' },
+                        enhancing: { className: 'enhancing-material-info-span', gridCols: 'auto min-content auto auto', buttonParent: 'cost' }
+                    };
+
+                    const selectors = SELECTORS[type];
+                    const config = configs[type];
+
+                    document.querySelectorAll(selectors.container).forEach(panel => {
+                        const dataAttr = \`\${type}ButtonInserted\`;
+                        if (panel.dataset[dataAttr]) return;
+
+                        if (type === 'enhancing' && panel.querySelector(selectors.instructions)) return;
+
+                        const requirements = panel.querySelector(selectors.requirements);
+                        if (!requirements) return;
+
+                        panel.dataset[dataAttr] = "true";
+
+                        this.setupMaterialInfo(requirements, config, type);
+                        this.setupUpgradeInfo(panel, selectors, type);
+                        this.setupButtons(panel, selectors, config, type);
+
+                        setTimeout(() => this.updateInfoSpans(type), CONFIG.DELAYS.UPDATE);
+                    });
+                }
+
+                setupMaterialInfo(requirements, config, type) {
+                    const modifiedAttr = \`\${type}Modified\`;
+                    if (requirements.dataset[modifiedAttr]) return;
+
+                    requirements.dataset[modifiedAttr] = "true";
+                    requirements.style.gridTemplateColumns = config.gridCols;
+
+                    requirements.querySelectorAll('.Item_itemContainer__x7kH1').forEach(item => {
+                        if (item.nextSibling?.classList?.contains(config.className)) return;
+                        const span = this.createInfoSpan();
+                        span.className = config.className;
+                        item.parentNode.insertBefore(span, item.nextSibling);
+                    });
+                }
+
+                setupUpgradeInfo(panel, selectors, type) {
+                    if (type !== 'production') return;
+
+                    const upgradeContainer = panel.querySelector(selectors.upgrade);
+                    if (!upgradeContainer || upgradeContainer.dataset.upgradeModified) return;
+
+                    upgradeContainer.dataset.upgradeModified = "true";
+                    if (!upgradeContainer.querySelector('.upgrade-info-span')) {
+                        const upgradeSpan = this.createInfoSpan();
+                        upgradeSpan.className = 'upgrade-info-span';
+                        upgradeContainer.appendChild(upgradeSpan);
+                    }
+                }
+
+                setupButtons(panel, selectors, config, type) {
+                    if (panel.querySelector('.buy-buttons-container')) return;
+
+                    // 创建主要按钮容器（包含直购、求购和购物车三个按钮）
+                    const materialButtonContainer = document.createElement('div');
+                    materialButtonContainer.className = 'buy-buttons-container';
+
+                    const baseStyles = { display: 'flex', gap: '6px', justifyContent: 'center', alignItems: 'center', marginBottom: '8px' };
+                    const typeStyles = {
+                        house: { width: 'fit-content', margin: '0 auto 8px auto', maxWidth: '320px', minWidth: '300px' },
+                        enhancing: { width: 'fit-content', margin: '0 auto 8px auto', maxWidth: '340px', minWidth: '300px' }
+                    };
+
+                    utils.applyStyles(materialButtonContainer, { ...baseStyles, ...typeStyles[type] });
+
+                    // 使用统一按钮创建方法
+                    const directBuyBtn = this.createUnifiedButton(LANG.directBuy, () => this.purchaseMaterials(type, false), 'direct-buy');
+                    const addToCartBtn = this.shoppingCart.createAddAllToCartButton(type);
+                    const bidOrderBtn = this.createUnifiedButton(LANG.bidOrder, () => this.purchaseMaterials(type, true), 'bid-order');
+
+                    // 将三个按钮都添加到同一个容器中并排显示
+                    materialButtonContainer.append(directBuyBtn, addToCartBtn, bidOrderBtn);
+
+                    if (type === 'production') {
+                        const upgradeContainer = panel.querySelector(selectors.upgrade);
+                        if (upgradeContainer && !upgradeContainer.querySelector('.upgrade-buttons-container')) {
+                            const upgradeButtonContainer = document.createElement('div');
+                            upgradeButtonContainer.className = 'upgrade-buttons-container';
+                            utils.applyStyles(upgradeButtonContainer, {
+                                display: 'flex',
+                                gap: '6px',
+                                justifyContent: 'center',
+                                alignItems: 'center',
+                                marginTop: '8px',
+                                width: '100%'
+                            });
+
+                            // 使用统一按钮创建方法创建升级按钮
+                            const directBuyUpgradeBtn = this.createUnifiedButton(LANG.directBuyUpgrade, () => this.purchaseUpgrades(type, false), 'direct-buy');
+                            const bidOrderUpgradeBtn = this.createUnifiedButton(LANG.bidOrderUpgrade, () => this.purchaseUpgrades(type, true), 'bid-order');
+                            
+                            upgradeButtonContainer.append(directBuyUpgradeBtn, bidOrderUpgradeBtn);
+
+                            upgradeContainer.appendChild(upgradeButtonContainer);
+                        }
+                    }
+
+                    const insertionMethods = {
+                        production: () => {
+                            const parent = panel.querySelector(selectors[config.buttonParent]);
+                            parent.parentNode.insertBefore(materialButtonContainer, parent.nextSibling);
+                        },
+                        house: () => {
+                            const parent = panel.querySelector(selectors[config.buttonParent]);
+                            parent.parentNode.insertBefore(materialButtonContainer, parent);
+                        },
+                        enhancing: () => {
+                            const parent = panel.querySelector(selectors[config.buttonParent]);
+                            parent.parentNode.insertBefore(materialButtonContainer, parent);
+                        }
+                    };
+
+                    insertionMethods[type]?.();
+                }
+
+                setupObserver(selector, callback, options = {}) {
+                    const element = document.querySelector(selector);
+                    if (!element) return null;
+
+                    const observer = new MutationObserver(callback);
+                    observer.observe(element, { childList: true, subtree: true, attributes: true, ...options });
+                    return observer;
+                }
+
+                // 在UIManager类中添加这个方法
+                handleMarketCartButton(mutationsList) {
+                    for (let mutation of mutationsList) {
+                        if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
+                            mutation.addedNodes.forEach(node => {
+                                if (node.classList && [...node.classList].some(c => c.startsWith('MarketplacePanel_marketNavButtonContainer'))) {
+                                    const buttons = node.querySelectorAll('button');
+                                    if (buttons.length > 0 && !node.querySelector('.market-cart-btn')) {
+                                        const lastButton = buttons[buttons.length - 1];
+                                        const cartButton = lastButton.cloneNode(true);
+                                        cartButton.textContent = '加入购物车';
+                                        cartButton.classList.add('market-cart-btn');
+                                        cartButton.onclick = () => {
+                                            this.addCurrentMarketItemToCart();
+                                        };
+                                        node.appendChild(cartButton);
+                                    }
+                                }
+                            });
+                        }
+                    }
+                }
+
+                // 添加物品到购物车的方法
+                addCurrentMarketItemToCart() {
+                    const currentItem = document.querySelector('.MarketplacePanel_currentItem__3ercC');
+                    const svgElement = currentItem?.querySelector('svg[aria-label]');
+                    const useElement = svgElement?.querySelector('use');
+                    
+                    if (!svgElement || !useElement) return;
+
+                    const itemName = svgElement.getAttribute('aria-label');
+                    const itemId = useElement.getAttribute('href')?.split('#')[1];
+                    
+                    if (!itemName || !itemId) return;
+
+                    const itemInfo = {
+                        name: itemName,
+                        id: itemId,
+                        iconHref: \`#\${itemId}\`
+                    };
+
+                    this.shoppingCart?.addItem(itemInfo, 1);
                 }
             }
 
@@ -2370,549 +3294,7 @@
                 }
             }
 
-            // UI管理器
-            class UIManager {
-                constructor() {
-                    this.toast = new Toast();
-                    this.api = new AutoBuyAPI();
-                    this.autoStopManager = new AutoStopManager();
-                    this.alchemyCalculator = new AlchemyProfitCalculator(this.api);
-                    this.shoppingCart = new ShoppingCartManager(); // 添加购物车管理器
-                    this.observer = null;
-                    this.loggerReady = false;
-                    this.alchemyObservers = [];
-                    // 将实例暴露给全局
-                    window.uiManager = this;
-                    this.init();
-                }
-
-                async init() {
-                    addGlobalButtonStyles();
-                    await utils.delay(1000);
-                    await this.checkLoggerAndInit();
-                    this.setupEasterEgg();
-                }
-
-                setupEasterEgg() {
-                    const keys = 'ArrowUp,ArrowUp,ArrowDown,ArrowDown,ArrowLeft,ArrowRight,ArrowLeft,ArrowRight,b,a'.split(',');
-                    const pressed = [];
-                    const handler = e => {
-                        pressed.push(e.key);
-                        if (pressed.length > keys.length) pressed.shift();
-                        if (keys.every((v, i) => v === pressed[i])) {
-                            removeEventListener('keydown', handler);
-                            this.toast.show('Keep this between us. Shhh...', 'success', 7000);
-                        }
-                    };
-                    addEventListener('keydown', handler);
-                }
-
-                async checkLoggerAndInit() {
-                    while (true) {
-                        try {
-                            const result = await this.api.checkAPI();
-                            if (result.available && result.core_ready) {
-                                this.loggerReady = true;
-                                this.initObserver();
-                                break;
-                            }
-                        } catch {}
-
-                        await utils.delay(CONFIG.DELAYS.API_CHECK);
-                    }
-                }
-
-                // 统一按钮创建方法
-                createUnifiedButton(text, onClick, buttonType) {
-                    const btn = document.createElement("button");
-                    btn.textContent = text;
-                    btn.className = 'unified-action-btn';
-                    btn.setAttribute('data-button-type', buttonType);
-
-                    // 应用统一样式
-                    this.shoppingCart.applyUnifiedButtonStyle(btn, buttonType);
-
-                    btn.addEventListener("click", () => this.handleButtonClick(btn, text, onClick, buttonType));
-
-                    return btn;
-                }
-
-                async handleButtonClick(btn, originalText, onClick, buttonType) {
-                    if (!this.loggerReady) {
-                        console.error(LANG.wsNotAvailable);
-                        return;
-                    }
-
-                    const isBidOrder = buttonType === 'bid-order';
-                    
-                    btn.disabled = true;
-                    btn.textContent = isBidOrder ? LANG.submitting : LANG.buying;
-                    
-                    // 保存原始样式
-                    const originalBg = btn.style.backgroundColor;
-                    const originalCursor = btn.style.cursor;
-                    
-                    utils.applyStyles(btn, { 
-                        backgroundColor: CONFIG.COLORS.disabled, 
-                        cursor: "not-allowed" 
-                    });
-
-                    try {
-                        await onClick();
-                    } catch (error) {
-                        this.toast.show(\`\${LANG.error}: \${error.message}\`, 'error');
-                    } finally {
-                        btn.disabled = false;
-                        btn.textContent = originalText;
-                        utils.applyStyles(btn, { 
-                            backgroundColor: originalBg, 
-                            cursor: originalCursor 
-                        });
-                    }
-                }
-
-                createInfoSpan() {
-                    const span = document.createElement("span");
-                    span.textContent = \`\${LANG.missing}0\`;
-                    utils.applyStyles(span, {
-                        fontSize: '12px', fontWeight: 'bold', padding: '2px 6px', borderRadius: '3px',
-                        whiteSpace: 'nowrap', minWidth: '60px', textAlign: 'center'
-                    });
-                    return span;
-                }
-
-                async updateInfoSpans(type) {
-                    const requirements = await MaterialCalculator.calculateRequirements(type);
-                    const className = \`\${type === 'house' ? 'house-' : type === 'enhancing' ? 'enhancing-' : ''}material-info-span\`;
-
-                    document.querySelectorAll(\`.\${className}\`).forEach((span, index) => {
-                        const materialReq = requirements.filter(req => req.type === 'material')[index];
-                        if (materialReq) {
-                            const needed = materialReq.supplementNeeded;
-                            span.textContent = \`\${LANG.missing}\${needed}\`;
-                            span.style.color = needed > 0 ? CONFIG.COLORS.error : CONFIG.COLORS.text;
-                        }
-                    });
-
-                    const upgradeSpan = document.querySelector('.upgrade-info-span');
-                    const upgradeReq = requirements.find(req => req.type === 'upgrade');
-                    if (upgradeSpan && upgradeReq) {
-                        const needed = upgradeReq.supplementNeeded;
-                        upgradeSpan.textContent = \`\${LANG.missing}\${needed}\`;
-                        upgradeSpan.style.color = needed > 0 ? CONFIG.COLORS.error : CONFIG.COLORS.text;
-                    }
-                }
-
-                async purchaseMaterials(type, isBidOrder = false) {
-                    if (!this.loggerReady) {
-                        this.toast.show(LANG.wsNotAvailable, 'error');
-                        return;
-                    }
-
-                    const requirements = await MaterialCalculator.calculateRequirements(type);
-                    const needToBuy = requirements.filter(item =>
-                        item.type === 'material' && item.itemId && !item.itemId.includes('coin') && item.supplementNeeded > 0
-                    );
-
-                    if (needToBuy.length === 0) {
-                        this.toast.show(LANG.sufficient, 'info');
-                        return;
-                    }
-
-                    const itemList = needToBuy.map(item =>
-                        \`\${item.materialName}: \${item.supplementNeeded}\${LANG.each}\`
-                    ).join(', ');
-
-                    this.toast.show(\`\${LANG.starting} \${needToBuy.length} \${LANG.materials}: \${itemList}\`, 'info');
-
-                    try {
-                        const purchaseItems = needToBuy.map(item => ({
-                            itemHrid: item.itemId.startsWith('/items/') ? item.itemId : \`/items/\${item.itemId}\`,
-                            quantity: item.supplementNeeded,
-                            materialName: item.materialName
-                        }));
-
-                        const results = isBidOrder ?
-                            await this.api.batchBidOrder(purchaseItems, CONFIG.DELAYS.PURCHASE) :
-                            await this.api.batchDirectPurchase(purchaseItems, CONFIG.DELAYS.PURCHASE);
-
-                        this.processResults(results, isBidOrder, type);
-
-                    } catch (error) {
-                        this.toast.show(\`\${LANG.error}: \${error.message}\`, 'error');
-                    }
-                }
-
-                async purchaseUpgrades(type, isBidOrder = false) {
-                    if (!this.loggerReady) {
-                        this.toast.show(LANG.wsNotAvailable, 'error');
-                        return;
-                    }
-
-                    const requirements = await MaterialCalculator.calculateRequirements(type);
-                    const needToBuy = requirements.filter(item =>
-                        item.type === 'upgrade' && item.itemId && !item.itemId.includes('coin') && item.supplementNeeded > 0
-                    );
-
-                    if (needToBuy.length === 0) {
-                        this.toast.show(LANG.sufficientUpgrade, 'info');
-                        return;
-                    }
-
-                    const itemList = needToBuy.map(item =>
-                        \`\${item.materialName}: \${item.supplementNeeded}\${LANG.each}\`
-                    ).join(', ');
-
-                    this.toast.show(\`\${LANG.starting} \${needToBuy.length} \${LANG.upgradeItems}: \${itemList}\`, 'info');
-
-                    try {
-                        const purchaseItems = needToBuy.map(item => ({
-                            itemHrid: item.itemId.startsWith('/items/') ? item.itemId : \`/items/\${item.itemId}\`,
-                            quantity: item.supplementNeeded,
-                            materialName: item.materialName
-                        }));
-
-                        const results = isBidOrder ?
-                            await this.api.batchBidOrder(purchaseItems, CONFIG.DELAYS.PURCHASE) :
-                            await this.api.batchDirectPurchase(purchaseItems, CONFIG.DELAYS.PURCHASE);
-
-                        this.processResults(results, isBidOrder, type);
-
-                    } catch (error) {
-                        this.toast.show(\`\${LANG.error}: \${error.message}\`, 'error');
-                    }
-                }
-
-                processResults(results, isBidOrder, type) {
-                    let successCount = 0;
-
-                    results.forEach(result => {
-                        const statusText = isBidOrder ?
-                            (result.success ? LANG.submitted : LANG.failed) :
-                            (result.success ? LANG.purchased : LANG.failed);
-
-                        const message = \`\${statusText} \${result.item.materialName || result.item.itemHrid} x\${result.item.quantity}\`;
-                        this.toast.show(message, result.success ? 'success' : 'error');
-
-                        if (result.success) successCount++;
-                    });
-
-                    const finalMessage = successCount > 0 ?
-                        \`\${LANG.complete} \${LANG.success} \${successCount}/\${results.length} \${LANG.materials}\` :
-                        LANG.allFailed;
-
-                    this.toast.show(finalMessage, successCount > 0 ? 'success' : 'error', successCount > 0 ? 5000 : 3000);
-
-                    if (successCount > 0) {
-                        setTimeout(() => this.updateInfoSpans(type), 2000);
-                    }
-                }
-
-                // 炼金UI管理
-                setupAlchemyUI() {  
-                    const alchemyComponent = document.querySelector('.SkillActionDetail_alchemyComponent__1J55d');
-                    const instructionsEl = document.querySelector('.SkillActionDetail_instructions___EYV5');
-                    const infoContainer = document.querySelector('.SkillActionDetail_info__3umoI');
-                    const existingDisplay = document.getElementById('alchemy-profit-display');
-
-                    const shouldShow = alchemyComponent && !instructionsEl && infoContainer;
-
-                    if (shouldShow && !existingDisplay) {
-                        const container = this.alchemyCalculator.createProfitDisplay();
-                        infoContainer.appendChild(container);
-
-                        this.alchemyCalculator.lastState = this.alchemyCalculator.getStateFingerprint();
-
-                        // 清理旧的观察器并设置新的
-                        this.alchemyObservers.forEach(obs => obs?.disconnect());
-                        this.alchemyObservers = [
-                            this.setupObserver('.ActionTypeConsumableSlots_consumableSlots__kFKk0', () => {
-                                const currentState = this.alchemyCalculator.getStateFingerprint();
-                                if (currentState !== this.alchemyCalculator.lastState) {
-                                    this.alchemyCalculator.lastState = currentState;
-                                    this.alchemyCalculator.debounceUpdate(() => this.alchemyCalculator.updateProfitDisplay());
-                                }
-                            }),
-                            this.setupObserver('.SkillActionDetail_successRate__2jPEP .SkillActionDetail_value__dQjYH', () => {
-                                const currentState = this.alchemyCalculator.getStateFingerprint();
-                                if (currentState !== this.alchemyCalculator.lastState) {
-                                    this.alchemyCalculator.lastState = currentState;
-                                    this.alchemyCalculator.debounceUpdate(() => this.alchemyCalculator.updateProfitDisplay());
-                                }
-                            }, { characterData: true })
-                        ].filter(Boolean);
-
-                        setTimeout(() => this.alchemyCalculator.updateProfitDisplay(), this.alchemyCalculator.initialized ? 50 : 100);
-                    } else if (!shouldShow && existingDisplay) {
-                        existingDisplay.remove();
-                        this.alchemyObservers.forEach(obs => obs?.disconnect());
-                        this.alchemyObservers = [];
-                    }
-                }
-
-                setupObserver(selector, callback, options = {}) {
-                    const element = document.querySelector(selector);
-                    if (!element) return null;
-
-                    const observer = new MutationObserver(callback);
-                    observer.observe(element, { childList: true, subtree: true, attributes: true, ...options });
-                    return observer;
-                }
-
-                initObserver() {
-                    if (this.observer) return;
-
-                    this.observer = new MutationObserver((mutationsList) => {
-                        Object.keys(SELECTORS).forEach(type => {
-                            if (type !== 'alchemy') this.setupUI(type);
-                        });
-                        // 检查炼金UI
-                        this.setupAlchemyUI();
-                        // 检查自动停止UI
-                        this.autoStopManager.injectAutoStopUI();
-                        // 检查市场按钮
-                        this.handleMarketCartButton(mutationsList);
-                    });
-
-                    this.observer.observe(document.body, { childList: true, subtree: true });
-
-                    // 输入监听
-                    let updateTimer = null;
-                    document.addEventListener('input', (e) => {
-                        if (e.target.classList.contains('Input_input__2-t98')) {
-                            clearTimeout(updateTimer);
-                            updateTimer = setTimeout(() => {
-                                this.updateInfoSpans('enhancing');
-                                this.updateInfoSpans('production');
-                            }, 1);
-                        }
-                    });
-
-                    document.addEventListener('click', (e) => {
-                        if (e.target.classList) {
-                            clearTimeout(updateTimer);
-                            updateTimer = setTimeout(() => {
-                                this.updateInfoSpans('enhancing');
-                                this.updateInfoSpans('production');
-                            }, 1);
-
-                            // 检查是否需要更新炼金显示
-                            if (e.target.closest('.AlchemyPanel_alchemyPanel__1Sa8_ .MuiTabs-flexContainer') ||
-                                e.target.closest('[class*="ItemSelector"]') ||
-                                e.target.closest('.Item_itemContainer__x7kH1') ||
-                                e.target.closest('[class*="SkillAction"]') ||
-                                e.target.closest('.MuiPopper-root.MuiTooltip-popper.MuiTooltip-popperInteractive.css-w9tg40')) {
-                                setTimeout(() => {
-                                    if (document.getElementById('alchemy-profit-display')) {
-                                        this.alchemyCalculator.debounceUpdate(() => this.alchemyCalculator.updateProfitDisplay());
-                                    }
-                                }, 1);
-                            }
-                        }
-                    });
-
-                    // 初始设置
-                    Object.keys(SELECTORS).forEach(type => {
-                        if (type !== 'alchemy') this.setupUI(type);
-                    });
-                    this.setupAlchemyUI();
-
-                    // 自动停止UI观察器
-                    let frameId = null;
-                    const scheduleUICheck = () => {
-                        if (frameId) cancelAnimationFrame(frameId);
-                        frameId = requestAnimationFrame(() => {
-                            this.autoStopManager.injectAutoStopUI();
-                            frameId = null;
-                        });
-                    };
-
-                    new MutationObserver(mutations => {
-                        for (const mutation of mutations) {
-                            if (mutation.type === 'childList') {
-                                for (const node of mutation.addedNodes) {
-                                    if (node.nodeType === Node.ELEMENT_NODE &&
-                                        (node.classList?.contains('SkillActionDetail_regularComponent__3oCgr') ||
-                                        node.querySelector?.('.SkillActionDetail_regularComponent__3oCgr') ||
-                                        node.classList?.contains('SkillActionDetail_maxActionCountInput__1C0Pw'))) {
-                                        scheduleUICheck();
-                                        return;
-                                    }
-                                }
-                            }
-                        }
-                    }).observe(document.body, { childList: true, subtree: true });
-                }
-
-                setupUI(type) {
-                    const configs = {
-                        production: { className: 'material-info-span', gridCols: 'auto min-content auto auto', buttonParent: 'name' },
-                        house: { className: 'house-material-info-span', gridCols: 'auto auto auto 140px', buttonParent: 'header' },
-                        enhancing: { className: 'enhancing-material-info-span', gridCols: 'auto min-content auto auto', buttonParent: 'cost' }
-                    };
-
-                    const selectors = SELECTORS[type];
-                    const config = configs[type];
-
-                    document.querySelectorAll(selectors.container).forEach(panel => {
-                        const dataAttr = \`\${type}ButtonInserted\`;
-                        if (panel.dataset[dataAttr]) return;
-
-                        if (type === 'enhancing' && panel.querySelector(selectors.instructions)) return;
-
-                        const requirements = panel.querySelector(selectors.requirements);
-                        if (!requirements) return;
-
-                        panel.dataset[dataAttr] = "true";
-
-                        this.setupMaterialInfo(requirements, config, type);
-                        this.setupUpgradeInfo(panel, selectors, type);
-                        this.setupButtons(panel, selectors, config, type);
-
-                        setTimeout(() => this.updateInfoSpans(type), CONFIG.DELAYS.UPDATE);
-                    });
-                }
-
-                setupMaterialInfo(requirements, config, type) {
-                    const modifiedAttr = \`\${type}Modified\`;
-                    if (requirements.dataset[modifiedAttr]) return;
-
-                    requirements.dataset[modifiedAttr] = "true";
-                    requirements.style.gridTemplateColumns = config.gridCols;
-
-                    requirements.querySelectorAll('.Item_itemContainer__x7kH1').forEach(item => {
-                        if (item.nextSibling?.classList?.contains(config.className)) return;
-                        const span = this.createInfoSpan();
-                        span.className = config.className;
-                        item.parentNode.insertBefore(span, item.nextSibling);
-                    });
-                }
-
-                setupUpgradeInfo(panel, selectors, type) {
-                    if (type !== 'production') return;
-
-                    const upgradeContainer = panel.querySelector(selectors.upgrade);
-                    if (!upgradeContainer || upgradeContainer.dataset.upgradeModified) return;
-
-                    upgradeContainer.dataset.upgradeModified = "true";
-                    if (!upgradeContainer.querySelector('.upgrade-info-span')) {
-                        const upgradeSpan = this.createInfoSpan();
-                        upgradeSpan.className = 'upgrade-info-span';
-                        upgradeContainer.appendChild(upgradeSpan);
-                    }
-                }
-
-                setupButtons(panel, selectors, config, type) {
-                    if (panel.querySelector('.buy-buttons-container')) return;
-
-                    // 创建主要按钮容器（包含直购、求购和购物车三个按钮）
-                    const materialButtonContainer = document.createElement('div');
-                    materialButtonContainer.className = 'buy-buttons-container';
-
-                    const baseStyles = { display: 'flex', gap: '6px', justifyContent: 'center', alignItems: 'center', marginBottom: '8px' };
-                    const typeStyles = {
-                        house: { width: 'fit-content', margin: '0 auto 8px auto', maxWidth: '320px', minWidth: '300px' },
-                        enhancing: { width: 'fit-content', margin: '0 auto 8px auto', maxWidth: '340px', minWidth: '300px' }
-                    };
-
-                    utils.applyStyles(materialButtonContainer, { ...baseStyles, ...typeStyles[type] });
-
-                    // 使用统一按钮创建方法
-                    const directBuyBtn = this.createUnifiedButton(LANG.directBuy, () => this.purchaseMaterials(type, false), 'direct-buy');
-                    const addToCartBtn = this.shoppingCart.createAddAllToCartButton(type);
-                    const bidOrderBtn = this.createUnifiedButton(LANG.bidOrder, () => this.purchaseMaterials(type, true), 'bid-order');
-
-                    // 将三个按钮都添加到同一个容器中并排显示
-                    materialButtonContainer.append(directBuyBtn, addToCartBtn, bidOrderBtn);
-
-                    if (type === 'production') {
-                        const upgradeContainer = panel.querySelector(selectors.upgrade);
-                        if (upgradeContainer && !upgradeContainer.querySelector('.upgrade-buttons-container')) {
-                            const upgradeButtonContainer = document.createElement('div');
-                            upgradeButtonContainer.className = 'upgrade-buttons-container';
-                            utils.applyStyles(upgradeButtonContainer, {
-                                display: 'flex',
-                                gap: '6px',
-                                justifyContent: 'center',
-                                alignItems: 'center',
-                                marginTop: '8px',
-                                width: '100%'
-                            });
-
-                            // 使用统一按钮创建方法创建升级按钮
-                            const directBuyUpgradeBtn = this.createUnifiedButton(LANG.directBuyUpgrade, () => this.purchaseUpgrades(type, false), 'direct-buy');
-                            const bidOrderUpgradeBtn = this.createUnifiedButton(LANG.bidOrderUpgrade, () => this.purchaseUpgrades(type, true), 'bid-order');
-                            
-                            upgradeButtonContainer.append(directBuyUpgradeBtn, bidOrderUpgradeBtn);
-
-                            upgradeContainer.appendChild(upgradeButtonContainer);
-                        }
-                    }
-
-                    const insertionMethods = {
-                        production: () => {
-                            const parent = panel.querySelector(selectors[config.buttonParent]);
-                            parent.parentNode.insertBefore(materialButtonContainer, parent.nextSibling);
-                        },
-                        house: () => {
-                            const parent = panel.querySelector(selectors[config.buttonParent]);
-                            parent.parentNode.insertBefore(materialButtonContainer, parent);
-                        },
-                        enhancing: () => {
-                            const parent = panel.querySelector(selectors[config.buttonParent]);
-                            parent.parentNode.insertBefore(materialButtonContainer, parent);
-                        }
-                    };
-
-                    insertionMethods[type]?.();
-                }
-
-                // 在UIManager类中添加这个方法
-                handleMarketCartButton(mutationsList) {
-                    for (let mutation of mutationsList) {
-                        if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
-                            mutation.addedNodes.forEach(node => {
-                                if (node.classList && [...node.classList].some(c => c.startsWith('MarketplacePanel_marketNavButtonContainer'))) {
-                                    const buttons = node.querySelectorAll('button');
-                                    if (buttons.length > 0 && !node.querySelector('.market-cart-btn')) {
-                                        const lastButton = buttons[buttons.length - 1];
-                                        const cartButton = lastButton.cloneNode(true);
-                                        cartButton.textContent = '加入购物车';
-                                        cartButton.classList.add('market-cart-btn');
-                                        cartButton.onclick = () => {
-                                            this.addCurrentMarketItemToCart();
-                                        };
-                                        node.appendChild(cartButton);
-                                    }
-                                }
-                            });
-                        }
-                    }
-                }
-
-                // 添加物品到购物车的方法
-                addCurrentMarketItemToCart() {
-                    const currentItem = document.querySelector('.MarketplacePanel_currentItem__3ercC');
-                    const svgElement = currentItem?.querySelector('svg[aria-label]');
-                    const useElement = svgElement?.querySelector('use');
-                    
-                    if (!svgElement || !useElement) return;
-
-                    const itemName = svgElement.getAttribute('aria-label');
-                    const itemId = useElement.getAttribute('href')?.split('#')[1];
-                    
-                    if (!itemName || !itemId) return;
-
-                    const itemInfo = {
-                        name: itemName,
-                        id: itemId,
-                        iconHref: \`#\${itemId}\`
-                    };
-
-                    this.shoppingCart?.addItem(itemInfo, 1);
-                }
-            }
-
+            // 全局样式
             function addGlobalButtonStyles() {
                 const style = document.createElement('style');
                 style.textContent = \`
@@ -2982,12 +3364,14 @@
                     setTimeout(() => {
                         uiManager.autoStopManager.injectAutoStopUI();
                         uiManager.setupAlchemyUI();
+                        uiManager.setupUniversalCalculatorUI();
                     }, 1000);
                 });
             } else {
                 setTimeout(() => {
                     uiManager.autoStopManager.injectAutoStopUI();
                     uiManager.setupAlchemyUI();
+                    uiManager.setupUniversalCalculatorUI();
                 }, 1000);
             }
 
