@@ -1757,24 +1757,82 @@
                     return result;
                 }
 
-                calculateEfficiency() {
-                    const props = utils.getReactProps(document.querySelector('.SkillActionDetail_alchemyComponent__1J55d'));
-                    if (!props) return 0;
+                calculateEfficiencyAndDrinkCosts() {
+                    const container = document.querySelector('.SkillActionDetail_alchemyComponent__1J55d');
+                    const props = utils.getReactProps(container);
+                    if (!props) return { efficiency: 0, drinkCosts: [] };
 
-                    const level = props.characterSkillMap?.get('/skills/alchemy')?.level || 0;
+                    const buffs = props.actionBuffs || [];
 
-                    let itemLevel = 0;
+                    // 获取基础炼金等级
+                    const baseAlchemyLevel = props.characterSkillMap?.get('/skills/alchemy')?.level || 0;
+
+                    // 获取配方要求等级
+                    let requiredLevel = 0;
                     const notesEl = document.querySelector('.SkillActionDetail_notes__2je2F');
                     if (notesEl) {
                         const match = notesEl.childNodes[0]?.textContent?.match(/\\d+/);
-                        itemLevel = match ? parseInt(match[0]) : 0;
+                        requiredLevel = match ? parseInt(match[0]) : 0;
                     }
 
-                    const buffEfficiency = (props.actionBuffs || [])
-                        .filter(b => b.typeHrid === '/buff_types/efficiency')
-                        .reduce((sum, b) => sum + (b.flatBoost || 0), 0);
+                    let efficiencyBuff = 0;
+                    let alchemyLevelBonus = 0;
 
-                    return buffEfficiency + Math.max(0, level - itemLevel) / 100;
+                    console.log(\`基础炼金等级: \${baseAlchemyLevel}, 配方要求等级: \${requiredLevel}\`);
+
+                    // 分析所有buff
+                    for (const buff of buffs) {
+                        // 效率buff
+                        if (buff.typeHrid === '/buff_types/efficiency') {
+                            efficiencyBuff += buff.flatBoost || 0;
+                        }
+
+                        // 炼金等级提升buff
+                        if (buff.typeHrid === '/buff_types/alchemy_level') {
+                            alchemyLevelBonus += buff.flatBoost || 0;
+                        }
+                    }
+
+                    // 计算最终炼金等级
+                    const finalAlchemyLevel = baseAlchemyLevel + alchemyLevelBonus;
+
+                    // 计算等级效率提升
+                    const levelEfficiencyBonus = Math.max(0, (finalAlchemyLevel - requiredLevel) / 100);
+
+                    // 总效率 = 效率buff + 等级效率提升
+                    const totalEfficiency = efficiencyBuff + levelEfficiencyBonus;
+
+                    // 获取饮料消耗成本
+                    const drinkCosts = this.getDrinkCosts();
+
+                    return { 
+                        efficiency: totalEfficiency, 
+                        drinkCosts: drinkCosts
+                    };
+                }
+
+                // 获取饮料消耗成本
+                getDrinkCosts() {
+                    const drinkCosts = [];
+                    
+                    // 查找消耗品槽位中的物品
+                    const consumableElements = [...document.querySelectorAll('.ActionTypeConsumableSlots_consumableSlots__kFKk0 .Item_itemContainer__x7kH1')];
+                    
+                    for (const element of consumableElements) {
+                        const href = element?.querySelector('svg use')?.getAttribute('href');
+                        const itemHrid = href ? \`/items/\${href.split('#')[1]}\` : null;
+                        
+                        if (itemHrid && itemHrid !== '/items/coin') {
+                            drinkCosts.push({
+                                itemHrid: itemHrid,
+                                // 这里先返回0，实际价格在calculateProfit中获取
+                                asks: 0,
+                                bids: 0
+                            });
+                        }
+                    }
+                    
+                    return drinkCosts;
                 }
 
                 hasNullPrices(data, useOptimistic) {
@@ -1815,13 +1873,18 @@
                         catalystEl ? this.getItemData(catalystEl) : Promise.resolve({ asks: 0, bids: 0 })
                     ]);
 
+                    // 获取效率和饮料成本信息
+                    const efficiencyData = this.calculateEfficiencyAndDrinkCosts();
+
                     const result = {
-                        successRate, timeCost,
-                        efficiency: this.calculateEfficiency(),
+                        successRate, 
+                        timeCost,
+                        efficiency: efficiencyData.efficiency,
                         requirements: requirements.filter(Boolean),
                         drops: drops.filter(Boolean),
                         catalyst: catalyst || { asks: 0, bids: 0 },
-                        consumables: consumables.filter(Boolean)
+                        consumables: consumables.filter(Boolean),
+                        drinkCosts: efficiencyData.drinkCosts // 添加饮料成本信息
                     };
 
                     return result;
@@ -1830,26 +1893,58 @@
                 calculateProfit(data, useOptimistic) {
                     if (this.hasNullPrices(data, useOptimistic)) return null;
 
-                    const totalReqCost = data.requirements.reduce((sum, item) =>
-                        sum + (useOptimistic ? item.bids : item.asks) * item.count, 0);
+                    const profitType = useOptimistic ? '乐观' : '悲观';
 
+                    // 计算材料成本
+                    const totalReqCost = data.requirements.reduce((sum, item) => {
+                        const price = useOptimistic ? item.bids : item.asks;
+                        const cost = price * item.count;
+                        return sum + cost;
+                    }, 0);
+
+                    // 计算催化剂成本
                     const catalystPrice = useOptimistic ? data.catalyst.bids : data.catalyst.asks;
+
+                    // 每次尝试的成本：失败时只消耗材料，成功时消耗材料+催化剂
                     const costPerAttempt = totalReqCost * (1 - data.successRate) + (totalReqCost + catalystPrice) * data.successRate;
 
+                    // 计算产出收入
                     const incomePerAttempt = data.drops.reduce((sum, drop) => {
                         const price = useOptimistic ? drop.asks : drop.bids;
                         let income = price * drop.dropRate * drop.count * data.successRate;
-                        if (drop.itemHrid !== '/items/coin') income *= 0.98;
+                        if (drop.itemHrid !== '/items/coin') {
+                            const taxedIncome = income * 0.98; // 市场税费2%
+                            income = taxedIncome;
+                        } 
                         return sum + income;
                     }, 0);
 
-                    const drinkCost = data.consumables.reduce((sum, item) =>
-                        sum + (useOptimistic ? item.bids : item.asks), 0);
-
+                    // 计算每次尝试的净利润
                     const netProfitPerAttempt = incomePerAttempt - costPerAttempt;
-                    const profitPerSecond = (netProfitPerAttempt * (1 + data.efficiency)) / data.timeCost - drinkCost / 300;
 
-                    return Math.round(profitPerSecond * 86400);
+                    // 计算每秒基础利润（应用效率buff）
+                    const profitPerSecond = (netProfitPerAttempt * (1 + data.efficiency)) / data.timeCost;
+
+                    // 计算饮料成本（按照通用计算器的方法：每个饮料价格相加后除以300秒）
+                    let drinkCostPerSecond = 0;
+                    if (data.drinkCosts && data.drinkCosts.length > 0) {
+                        const totalDrinkCost = data.drinkCosts.reduce((sum, drinkInfo) => {
+                            // 从consumables中找到对应的价格数据
+                            const consumableData = data.consumables.find(c => c.itemHrid === drinkInfo.itemHrid);
+                            if (consumableData) {
+                                const price = useOptimistic ? consumableData.bids : consumableData.asks;
+                                return sum + price;
+                            }
+                            return sum;
+                        }, 0);
+                        drinkCostPerSecond = totalDrinkCost / 300; // 饮料持续5分钟=300秒
+                    }
+
+                    // 最终每秒利润 = 每秒基础利润 - 每秒饮料成本
+                    const finalProfitPerSecond = profitPerSecond - drinkCostPerSecond;
+
+                    const dailyProfit = finalProfitPerSecond * 86400; // 24小时 = 86400秒
+                    return Math.round(dailyProfit);
                 }
 
                 getStateFingerprint() {
@@ -2514,7 +2609,7 @@
                 }
 
                 // 炼金UI管理
-                setupAlchemyUI() {
+                setupAlchemyUI() {  
                     const alchemyComponent = document.querySelector('.SkillActionDetail_alchemyComponent__1J55d');
                     const instructionsEl = document.querySelector('.SkillActionDetail_instructions___EYV5');
                     const infoContainer = document.querySelector('.SkillActionDetail_info__3umoI');
