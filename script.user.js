@@ -3,7 +3,7 @@
 // @name:zh-CN   [银河奶牛]生产采集增强
 // @name:en      MWI Production & Gathering Enhanced
 // @namespace    http://tampermonkey.net/
-// @version      3.4.0
+// @version      3.4.1
 // @description  计算制造、烹饪、强化、房屋所需材料并一键购买，计算实时生产和炼金利润，增加按照目标材料数量进行采集的功能，快速切换角色，购物车功能
 // @description:en  Calculate materials for crafting, cooking, enhancing, housing with one-click purchase, calculate real-time production & alchemy profits, add target-based gathering functionality, fast character switching, shopping cart feature
 // @author       XIxixi297
@@ -1516,9 +1516,9 @@
                 }
             }
 
-            let asks = 0, bids = 0;
+            let asks = 0.0, bids = 0.0;
             if (itemHrid === '/items/coin') {
-                asks = bids = 1;
+                asks = bids = 1.0;
             } else {
                 const orderBooks = await this.getMarketData(itemHrid);
                 if (orderBooks?.[enhancementLevel]) {
@@ -1527,11 +1527,11 @@
                         asks = asksList?.length > 0 ? asksList[0].price : null;
                         bids = bidsList?.length > 0 ? bidsList[0].price : null;
                     } else {
-                        asks = asksList?.[0]?.price || 0;
-                        bids = bidsList?.[0]?.price || 0;
+                        asks = asksList?.[0]?.price || 0.0;
+                        bids = bidsList?.[0]?.price || 0.0;
                     }
                 } else {
-                    asks = bids = reqIndex >= 0 ? null : orderBooks ? -1 : 0;
+                    asks = bids = reqIndex >= 0 ? null : orderBooks ? -1.0 : 0.0;
                 }
             }
 
@@ -1540,18 +1540,18 @@
             if (reqIndex >= 0) {
                 const countEl = document.querySelectorAll('.SkillActionDetail_itemRequirements__3SPnA .SkillActionDetail_inputCount__1rdrn')[reqIndex];
                 const rawCountText = countEl?.textContent || '1';
-                result.count = parseInt(utils.cleanNumber(rawCountText)) || 1;
+                result.count = parseFloat(utils.cleanNumber(rawCountText)) || 1.0;
             } else if (dropIndex >= 0) {
                 const dropEl = document.querySelectorAll('.SkillActionDetail_drop__26KBZ')[dropIndex];
                 const text = dropEl?.textContent || '';
                 // 提取数量
                 const countMatch = text.match(/^([\d\s,.]+)/);
                 const rawCountText = countMatch?.[1] || '1';
-                result.count = parseInt(utils.cleanNumber(rawCountText)) || 1;
+                result.count = parseFloat(utils.cleanNumber(rawCountText)) || 1.0;
                 // 提取掉落率
                 const rateMatch = text.match(/([\d,.]+)%/);
                 const rawRateText = rateMatch?.[0] || '100';
-                result.dropRate = parseFloat(utils.cleanNumber(rawRateText)) / 100 || 1;
+                result.dropRate = parseFloat(utils.cleanNumber(rawRateText)) / 100.0 || 1.0;
             }
 
             return result;
@@ -1560,7 +1560,7 @@
         calculateEfficiencyAndDrinkCosts() {
             const container = document.querySelector('.SkillActionDetail_alchemyComponent__1J55d');
             const props = utils.getReactProps(container);
-            if (!props) return { efficiency: 0, drinkCosts: [] };
+            if (!props) return { efficiency: 0.0, drinkCosts: [], actionSpeed: 0.0 };
 
             const buffs = props.actionBuffs || [];
             const baseAlchemyLevel = props.characterSkillMap?.get('/skills/alchemy')?.level || 0;
@@ -1572,24 +1572,28 @@
                 requiredLevel = match ? parseInt(match[0]) : 0;
             }
 
-            let efficiencyBuff = 0;
-            let alchemyLevelBonus = 0;
+            let efficiencyBuff = 0.0;
+            let alchemyLevelBonus = 0.0;
+            let actionSpeedBuff = 0.0;
 
             for (const buff of buffs) {
                 if (buff.typeHrid === '/buff_types/efficiency') {
-                    efficiencyBuff += buff.flatBoost || 0;
+                    efficiencyBuff += (buff.flatBoost || 0.0);
                 }
                 if (buff.typeHrid === '/buff_types/alchemy_level') {
-                    alchemyLevelBonus += buff.flatBoost || 0;
+                    alchemyLevelBonus += (buff.flatBoost || 0.0);
+                }
+                if (buff.typeHrid === '/buff_types/action_speed') {
+                    actionSpeedBuff += (buff.flatBoost || 0.0);
                 }
             }
 
             const finalAlchemyLevel = baseAlchemyLevel + alchemyLevelBonus;
-            const levelEfficiencyBonus = Math.max(0, (finalAlchemyLevel - requiredLevel) / 100);
+            const levelEfficiencyBonus = Math.max(0.0, (finalAlchemyLevel - requiredLevel) / 100.0);
             const totalEfficiency = efficiencyBuff + levelEfficiencyBonus;
 
             const drinkCosts = this.getDrinkCosts();
-            return { efficiency: totalEfficiency, drinkCosts: drinkCosts };
+            return { efficiency: totalEfficiency, drinkCosts: drinkCosts, actionSpeed: actionSpeedBuff };
         }
 
         getDrinkCosts() {
@@ -1599,7 +1603,7 @@
                 const href = element?.querySelector('svg use')?.getAttribute('href');
                 const itemHrid = href ? `/items/${href.split('#')[1]}` : null;
                 if (itemHrid && itemHrid !== '/items/coin') {
-                    drinkCosts.push({ itemHrid: itemHrid, asks: 0, bids: 0 });
+                    drinkCosts.push({ itemHrid: itemHrid, asks: 0.0, bids: 0.0 });
                 }
             }
             return drinkCosts;
@@ -1618,14 +1622,16 @@
         async getActionData() {
             const getValue = sel => {
                 const element = document.querySelector(sel);
-                const rawText = element?.textContent || '0';
+                const rawText = element?.textContent || '0.0';
                 return parseFloat(utils.cleanNumber(rawText));
             };
 
-            const successRate = getValue('.SkillActionDetail_successRate__2jPEP .SkillActionDetail_value__dQjYH') / 100;
-            const timeCost = getValue('.SkillActionDetail_timeCost__1jb2x .SkillActionDetail_value__dQjYH');
+            const successRate = getValue('.SkillActionDetail_successRate__2jPEP .SkillActionDetail_value__dQjYH') / 100.0;
 
-            if (!successRate || !timeCost) return null;
+            if (isNaN(successRate) || successRate < 0) return null;
+
+            const efficiencyData = this.calculateEfficiencyAndDrinkCosts();
+            const timeCost = 20.0 / (1.0 + efficiencyData.actionSpeed);
 
             const reqEls = [...document.querySelectorAll('.SkillActionDetail_itemRequirements__3SPnA .Item_itemContainer__x7kH1')];
             const dropEls = [...document.querySelectorAll('.SkillActionDetail_dropTable__3ViVp .Item_itemContainer__x7kH1')];
@@ -1637,10 +1643,8 @@
                 Promise.all(reqEls.map((el, i) => this.getItemData(el, -1, i))),
                 Promise.all(dropEls.map((el, i) => this.getItemData(el, i))),
                 Promise.all(consumEls.map(el => this.getItemData(el))),
-                catalystEl ? this.getItemData(catalystEl) : Promise.resolve({ asks: 0, bids: 0 })
+                catalystEl ? this.getItemData(catalystEl) : Promise.resolve({ asks: 0.0, bids: 0.0 })
             ]);
-
-            const efficiencyData = this.calculateEfficiencyAndDrinkCosts();
 
             return {
                 successRate,
@@ -1648,7 +1652,7 @@
                 efficiency: efficiencyData.efficiency,
                 requirements: requirements.filter(Boolean),
                 drops: drops.filter(Boolean),
-                catalyst: catalyst || { asks: 0, bids: 0 },
+                catalyst: catalyst || { asks: 0.0, bids: 0.0 },
                 consumables: consumables.filter(Boolean),
                 drinkCosts: efficiencyData.drinkCosts
             };
@@ -1659,25 +1663,33 @@
 
             const totalReqCost = data.requirements.reduce((sum, item) => {
                 const price = useOptimistic ? item.bids : item.asks;
-                return sum + price * item.count;
-            }, 0);
+                return sum + (price * item.count);
+            }, 0.0);
 
             const catalystPrice = useOptimistic ? data.catalyst.bids : data.catalyst.asks;
-            const costPerAttempt = totalReqCost * (1 - data.successRate) + (totalReqCost + catalystPrice) * data.successRate;
+            const costPerAttempt = (totalReqCost * (1.0 - data.successRate)) + ((totalReqCost + catalystPrice) * data.successRate);
 
-            const incomePerAttempt = data.drops.reduce((sum, drop) => {
+            const incomePerAttempt = data.drops.reduce((sum, drop, index) => {
                 const price = useOptimistic ? drop.asks : drop.bids;
-                let income = price * drop.dropRate * drop.count * data.successRate;
+                let income;
+
+                const isLastTwoDrops = index >= data.drops.length - 2;
+                if (isLastTwoDrops) {
+                    income = price * drop.dropRate * drop.count;
+                } else {
+                    income = price * drop.dropRate * drop.count * data.successRate;
+                }
+
                 if (drop.itemHrid !== '/items/coin') {
                     income *= 0.98;
                 }
                 return sum + income;
-            }, 0);
+            }, 0.0);
 
             const netProfitPerAttempt = incomePerAttempt - costPerAttempt;
-            const profitPerSecond = (netProfitPerAttempt * (1 + data.efficiency)) / data.timeCost;
+            const profitPerSecond = (netProfitPerAttempt * (1.0 + data.efficiency)) / data.timeCost;
 
-            let drinkCostPerSecond = 0;
+            let drinkCostPerSecond = 0.0;
             if (data.drinkCosts && data.drinkCosts.length > 0) {
                 const totalDrinkCost = data.drinkCosts.reduce((sum, drinkInfo) => {
                     const consumableData = data.consumables.find(c => c.itemHrid === drinkInfo.itemHrid);
@@ -1686,13 +1698,14 @@
                         return sum + price;
                     }
                     return sum;
-                }, 0);
-                drinkCostPerSecond = totalDrinkCost / 300;
+                }, 0.0);
+                drinkCostPerSecond = totalDrinkCost / 300.0;
             }
 
             const finalProfitPerSecond = profitPerSecond - drinkCostPerSecond;
-            const dailyProfit = finalProfitPerSecond * 86400;
-            return Math.round(dailyProfit);
+            const dailyProfit = finalProfitPerSecond * 86400.0;
+
+            return dailyProfit;
         }
 
         getStateFingerprint() {
@@ -1820,11 +1833,11 @@
         async calculateBuffEffectsAndCosts() {
             const container = document.querySelector('.SkillActionDetail_regularComponent__3oCgr');
             const props = utils.getReactProps(container);
-            if (!props) return { efficiency: 0, drinkCosts: [] };
+            if (!props) return { efficiency: 0.0, drinkCosts: [] };
 
             const buffs = props.actionBuffs || [];
-            let efficiencyBuff = 0;
-            let levelBonus = 0;
+            let efficiencyBuff = 0.0;
+            let levelBonus = 0.0;
 
             const actionType = this.getCurrentActionType();
             const skillLevel = this.getCurrentSkillLevel(actionType);
@@ -1832,18 +1845,18 @@
 
             for (const buff of buffs) {
                 if (buff.typeHrid === '/buff_types/efficiency') {
-                    efficiencyBuff += buff.flatBoost || 0;
+                    efficiencyBuff += (buff.flatBoost || 0.0);
                 }
                 if (buff.typeHrid && buff.typeHrid.includes('_level')) {
                     const buffSkillType = this.getSkillTypeFromLevelBuff(buff.typeHrid);
                     if (buffSkillType === actionType) {
-                        levelBonus += buff.flatBoost || 0;
+                        levelBonus += (buff.flatBoost || 0.0);
                     }
                 }
             }
 
             const finalSkillLevel = skillLevel + levelBonus;
-            const levelEfficiencyBonus = Math.max(0, (finalSkillLevel - requiredLevel) / 100);
+            const levelEfficiencyBonus = Math.max(0.0, (finalSkillLevel - requiredLevel) / 100.0);
             const totalEfficiency = efficiencyBuff + levelEfficiencyBonus;
 
             const drinkCosts = await this.getDrinkCosts();
@@ -1882,28 +1895,28 @@
             }
             if (isUpgrade) enhancementLevel = 0;
 
-            let asks = 0, bids = 0;
+            let asks = 0.0, bids = 0.0;
             if (itemHrid === '/items/coin') {
-                asks = bids = 1;
+                asks = bids = 1.0;
             } else {
                 const orderBooks = await this.getMarketData(itemHrid);
                 if (orderBooks && orderBooks[enhancementLevel]) {
                     const { asks: asksList, bids: bidsList } = orderBooks[enhancementLevel];
-                    asks = (asksList && asksList[0]) ? asksList[0].price : 0;
-                    bids = (bidsList && bidsList[0]) ? bidsList[0].price : 0;
+                    asks = (asksList && asksList[0]) ? asksList[0].price : 0.0;
+                    bids = (bidsList && bidsList[0]) ? bidsList[0].price : 0.0;
                 } else {
-                    asks = bids = orderBooks ? -1 : 0;
+                    asks = bids = orderBooks ? -1.0 : 0.0;
                 }
             }
 
             const result = { itemHrid, asks, bids, enhancementLevel };
 
             if (isUpgrade) {
-                result.count = 1;
+                result.count = 1.0;
             } else if (isOutput) {
                 const outputContainer = element.closest('.SkillActionDetail_item__2vEAz');
                 const countText = outputContainer?.querySelector('div:first-child')?.textContent || '1';
-                result.count = parseFloat(utils.cleanNumber(countText)) || 1;
+                result.count = parseFloat(utils.cleanNumber(countText)) || 1.0;
             } else if (isRequirement) {
                 const requirementRow = element.closest('.SkillActionDetail_itemRequirements__3SPnA');
                 const allCounts = requirementRow?.querySelectorAll('.SkillActionDetail_inputCount__1rdrn');
@@ -1920,7 +1933,7 @@
                 const countElement = allCounts ? allCounts[itemIndex] : null;
                 const rawText = countElement?.textContent || '1';
                 const cleanText = rawText.replace(/[^\d.,]/g, '');
-                result.count = parseFloat(utils.cleanNumber(cleanText)) || 1;
+                result.count = parseFloat(utils.cleanNumber(cleanText)) || 1.0;
             }
 
             return result;
@@ -1935,7 +1948,7 @@
                     if (match) return parseFloat(utils.cleanNumber(match[1]));
                 }
             }
-            return 0;
+            return 0.0;
         }
 
         parseDropRate(itemHrid) {
@@ -1949,7 +1962,7 @@
                         if (dropItemHrid === itemHrid) {
                             const rateText = dropElement.textContent.match(/~?([\d.]+)%/);
                             if (rateText) {
-                                return parseFloat(utils.cleanNumber(rateText[0])) / 100;
+                                return parseFloat(utils.cleanNumber(rateText[0])) / 100.0;
                             }
                         }
                     }
@@ -1963,11 +1976,11 @@
         hasNullPrices(data, useOptimistic) {
             const checkItems = (items) => items.some(item =>
                 (useOptimistic ? item.bids : item.asks) === null ||
-                (useOptimistic ? item.bids : item.asks) <= 0
+                (useOptimistic ? item.bids : item.asks) <= 0.0
             );
             const checkDrinks = (drinks) => drinks.some(drink =>
                 (useOptimistic ? drink.bids : drink.asks) === null ||
-                (useOptimistic ? drink.bids : drink.asks) <= 0
+                (useOptimistic ? drink.bids : drink.asks) <= 0.0
             );
             return checkItems(data.requirements) || checkItems(data.outputs) ||
                 checkItems(data.upgrades || []) || checkDrinks(data.drinkCosts || []);
@@ -2005,9 +2018,9 @@
 
         calculateProfit(data, useOptimistic) {
             if (this.hasNullPrices(data, useOptimistic)) return null;
-            if (data.actionTime <= 0) return null;
+            if (data.actionTime <= 0.0) return null;
 
-            let totalCost = 0;
+            let totalCost = 0.0;
             data.requirements.forEach(item => {
                 const price = useOptimistic ? item.bids : item.asks;
                 totalCost += price * item.count;
@@ -2020,9 +2033,9 @@
                 });
             }
 
-            const effectiveTime = data.actionTime / (1 + data.efficiency);
+            const effectiveTime = data.actionTime / (1.0 + data.efficiency);
 
-            let totalIncome = 0;
+            let totalIncome = 0.0;
             data.outputs.forEach(item => {
                 const price = useOptimistic ? item.asks : item.bids;
                 let income = price * item.count;
@@ -2036,7 +2049,7 @@
                 data.drops.forEach(item => {
                     const price = useOptimistic ? item.asks : item.bids;
                     const dropRate = this.parseDropRate(item.itemHrid) || 0.05;
-                    let income = price * (item.count || 1) * dropRate;
+                    let income = price * (item.count || 1.0) * dropRate;
                     if (item.itemHrid !== '/items/coin') {
                         income *= 0.98;
                     }
@@ -2045,20 +2058,21 @@
             }
 
             const profitPerAction = totalIncome - totalCost;
-            const profitPerSecond = (profitPerAction * (1 + data.efficiency)) / data.actionTime;
+            const profitPerSecond = (profitPerAction * (1.0 + data.efficiency)) / data.actionTime;
 
-            let drinkCostPerSecond = 0;
+            let drinkCostPerSecond = 0.0;
             if (data.drinkCosts.length > 0) {
                 const totalDrinkCost = data.drinkCosts.reduce((sum, item) => {
                     const price = useOptimistic ? item.bids : item.asks;
                     return sum + price;
-                }, 0);
-                drinkCostPerSecond = totalDrinkCost / 300;
+                }, 0.0);
+                drinkCostPerSecond = totalDrinkCost / 300.0;
             }
 
             const finalProfitPerSecond = profitPerSecond - drinkCostPerSecond;
-            const dailyProfit = finalProfitPerSecond * 86400;
-            return Math.round(dailyProfit);
+            const dailyProfit = finalProfitPerSecond * 86400.0;
+
+            return dailyProfit;
         }
 
         getStateFingerprint() {
@@ -2128,6 +2142,7 @@
             this.loadSavedListsFromStorage();
             this.updateCartBadge();
             this.updateSavedListsDisplay();
+            this.setupMarketCartButton();
 
             setTimeout(() => {
                 this.updateCartBadge();
@@ -2398,6 +2413,62 @@
                     listNameInput.value = this.currentListName;
                 }
             }, 0);
+        }
+
+        //设置市场购物车按钮
+        setupMarketCartButton() {
+            const observer = new MutationObserver((mutationsList) => {
+                this.handleMarketCartButton(mutationsList);
+            });
+            observer.observe(document.body, { childList: true, subtree: true });
+        }
+
+        //处理市场购物车按钮
+        handleMarketCartButton(mutationsList) {
+            for (let mutation of mutationsList) {
+                if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
+                    mutation.addedNodes.forEach(node => {
+                        if (node.nodeType === Node.ELEMENT_NODE &&
+                            node.classList &&
+                            [...node.classList].some(c => c.startsWith('MarketplacePanel_marketNavButtonContainer'))) {
+
+                            const buttons = node.querySelectorAll('button');
+                            if (buttons.length > 0 && !node.querySelector('.market-cart-btn')) {
+                                const lastButton = buttons[buttons.length - 1];
+                                const cartButton = lastButton.cloneNode(true);
+                                cartButton.textContent = LANG.addToCart;
+                                cartButton.classList.add('market-cart-btn');
+                                cartButton.onclick = () => {
+                                    this.addCurrentMarketItemToCart();
+                                };
+                                node.appendChild(cartButton);
+                            }
+                        }
+                    });
+                }
+            }
+        }
+
+        //添加当前市场物品到购物车
+        addCurrentMarketItemToCart() {
+            const currentItem = document.querySelector('.MarketplacePanel_currentItem__3ercC');
+            const svgElement = currentItem?.querySelector('svg[aria-label]');
+            const useElement = svgElement?.querySelector('use');
+
+            if (!svgElement || !useElement) return;
+
+            const itemName = svgElement.getAttribute('aria-label');
+            const itemId = useElement.getAttribute('href')?.split('#')[1];
+
+            if (!itemName || !itemId) return;
+
+            const itemInfo = {
+                name: itemName,
+                id: itemId,
+                iconHref: `#${itemId}`
+            };
+
+            this.addItem(itemInfo, 1);
         }
 
         bindEvents() {
