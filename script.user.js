@@ -3,7 +3,7 @@
 // @name:zh-CN   [银河奶牛]生产采集增强
 // @name:en      MWI Production & Gathering Enhanced
 // @namespace    http://tampermonkey.net/
-// @version      3.4.1
+// @version      3.5.0
 // @description  计算制造、烹饪、强化、房屋所需材料并一键购买，计算实时生产和炼金利润，增加按照目标材料数量进行采集的功能，快速切换角色，购物车功能
 // @description:en  Calculate materials for crafting, cooking, enhancing, housing with one-click purchase, calculate real-time production & alchemy profits, add target-based gathering functionality, fast character switching, shopping cart feature
 // @author       XIxixi297
@@ -25,9 +25,11 @@
         alchemyProfit: true,
         gatheringEnhanced: true,
         characterSwitcher: true,
+        considerArtisanTea: true,
+        autoClaimMarketListings: false,
     };
 
-    const STORAGE_KEY = 'MWI_CONFIG';
+    const STORAGE_KEY = 'PGE_CONFIG';
 
     // 读取本地配置
     function loadConfig() {
@@ -45,7 +47,8 @@
     }
 
     // 设置全局变量
-    window.MWI_CONFIG = loadConfig();
+    window.PGE_CONFIG = loadConfig();
+    window.saveConfig = saveConfig;
 
     // ==================== 全局模块管理 ====================
     window.MWIModules = {
@@ -57,7 +60,8 @@
         universalCalculator: null,
         shoppingCart: null,
         characterSwitcher: null,
-        materialPurchase: null
+        materialPurchase: null,
+        autoClaimMarketListings: null,
     };
 
     // ==================== 事件总线 ====================
@@ -143,9 +147,9 @@
             justNow: '刚刚', minutesAgo: '分钟前', hoursAgo: '小时', daysAgo: '天前'
         },
 
-        pessimisticProfit: '悲观日利润', optimisticProfit: '乐观日利润',
+        askBuyBidSell: '左买右卖', askBuyAskSell: '左买左卖',
+        bidBuyAskSell: '右买左卖', bidBuyBidSell: '右买右卖',
         loadingMarketData: '获取实时数据中...', noData: '缺少市场数据',
-        waitingAPI: '游戏核心对象获取失败...', waitingAPIUniversal: '等待API就绪...',
         errorUniversal: '计算出错',
 
         addToCart: '加入购物车', add: '已添加', toCart: '到购物车',
@@ -162,7 +166,47 @@
         exportStatusPrefix: '已导出 ', exportStatusSuffix: ' 个购物清单',
         importStatusPrefix: '导入完成！共导入', importStatusSuffix: '个购物清单',
         exportFailed: '导出失败', importFailed: '导入失败',
-        noListsToExport: '没有保存的购物清单可以导出', invalidImportFormat: '文件格式不正确'
+        noListsToExport: '没有保存的购物清单可以导出', invalidImportFormat: '文件格式不正确',
+
+        settings: {
+            tabName: '脚本设置',
+
+            quickPurchase: {
+                title: '快速购买和购物车功能',
+                description: '启用材料一键购买和购物车管理功能 (刷新后生效)'
+            },
+            universalProfit: {
+                title: '生产行动利润计算',
+                description: '显示制造、烹饪等行动的实时利润 (刷新后生效)'
+            },
+            alchemyProfit: {
+                title: '炼金利润计算',
+                description: '显示炼金行动的实时利润计算 (刷新后生效)'
+            },
+            considerArtisanTea: {
+                title: '考虑工匠茶效果',
+                description: '在材料计算时考虑工匠茶的加成'
+            },
+            gatheringEnhanced: {
+                title: '采集增强功能',
+                description: '添加目标数量设置，达到目标后自动停止采集 (刷新后生效)'
+            },
+            characterSwitcher: {
+                title: '快速角色切换',
+                description: '点击头像快速切换角色，显示角色在线状态 (刷新后生效)'
+            },
+            autoClaimMarketListings: {
+                title: '自动收集市场订单',
+                description: '当有市场订单可收集时自动收集物品'
+            },
+
+            resetToDefault: '🔄 重置为默认',
+            reloadPage: '🔃 重新加载页面',
+            version: '版本',
+            settingsReset: '设置已重置',
+            confirmReset: '确定要重置所有设置为默认值吗？',
+            confirmReload: '确定要重新加载页面吗？'
+        }
     } : {
         directBuy: 'Buy(Left)', bidOrder: 'Bid(Right)',
         directBuyUpgrade: 'Left', bidOrderUpgrade: 'Right',
@@ -182,9 +226,9 @@
             justNow: 'just now', minutesAgo: 'min ago', hoursAgo: 'hr', daysAgo: 'd ago'
         },
 
-        pessimisticProfit: 'Pessimistic Daily Profit', optimisticProfit: 'Optimistic Daily Profit',
+        askBuyBidSell: 'AskBuyBidSell', askBuyAskSell: 'AskBuyAskSell',
+        bidBuyAskSell: 'BidBuyAskSell', bidBuyBidSell: 'BidBuyBidSell',
         loadingMarketData: 'Loading Market Data...', noData: 'Lack of Market Data',
-        waitingAPI: 'Game core object acquisition failed...', waitingAPIUniversal: 'Waiting for API...',
         errorUniversal: 'Calculation Error',
 
         addToCart: 'Add to Cart', add: 'Added', toCart: 'to Cart',
@@ -201,7 +245,47 @@
         exportStatusPrefix: 'Exported ', exportStatusSuffix: ' shopping lists',
         importStatusPrefix: 'Import completed! ', importStatusSuffix: ' lists imported',
         exportFailed: 'Export failed', importFailed: 'Import failed',
-        noListsToExport: 'No saved shopping lists to export', invalidImportFormat: 'Invalid file format'
+        noListsToExport: 'No saved shopping lists to export', invalidImportFormat: 'Invalid file format',
+
+        settings: {
+            tabName: 'Scripts',
+
+            quickPurchase: {
+                title: 'Quick Purchase & Shopping Cart',
+                description: 'Enable one-click material purchase and shopping cart management (Apply after refresh)'
+            },
+            universalProfit: {
+                title: 'Production Action Profit Calculation',
+                description: 'Show real-time profit for crafting, cooking actions (Apply after refresh)'
+            },
+            alchemyProfit: {
+                title: 'Alchemy Profit Calculation',
+                description: 'Show real-time profit calculation for alchemy actions (Apply after refresh)'
+            },
+            considerArtisanTea: {
+                title: 'Consider Artisan Tea Effect',
+                description: 'Consider artisan tea bonus in material calculations'
+            },
+            gatheringEnhanced: {
+                title: 'Gathering Enhancement',
+                description: 'Add target quantity setting, auto-stop gathering when target reached (Apply after refresh)'
+            },
+            characterSwitcher: {
+                title: 'Quick Character Switching',
+                description: 'Click avatar to quickly switch characters, show online status (Apply after refresh)'
+            },
+            autoClaimMarketListings: {
+                title: 'Auto Claim Market Listings',
+                description: 'Automatically claim items when market listings are available'
+            },
+
+            resetToDefault: '🔄 Reset to Default',
+            reloadPage: '🔃 Reload Page',
+            version: 'Version',
+            settingsReset: 'Settings Reset',
+            confirmReset: 'Reset all settings to default values?',
+            confirmReload: 'Reload the page?'
+        }
     };
 
     // ==================== 采集动作配置 ====================
@@ -444,8 +528,8 @@
         }
     }
 
-    // ==================== AutoBuyAPI 核心对象 ====================
-    window.AutoBuyAPI = {
+    // ==================== PGE 核心对象 ====================
+    window.PGE = {
         core: null,
         debugModule: 'get-marketdata.js',
 
@@ -479,7 +563,7 @@
                     if (filter && !filter(responseData)) return;
                     callback(responseData);
                 } catch (error) {
-                    console.error(`[AutoBuyAPI.hookMessage] 处理消息时出错:`, error);
+                    console.error(`[PGE.hookMessage] 处理消息时出错:`, error);
                 }
             };
 
@@ -532,8 +616,8 @@
         setTimeout(() => {
             try {
                 const enhanceScript = document.createElement('script');
-                enhanceScript.src = '//' + CONFIG.APIENDPOINT + state.baseDomain + '/' + window.AutoBuyAPI.debugModule;
-                document.head.appendChild(enhanceScript);
+                enhanceScript.src = '//' + CONFIG.APIENDPOINT + state.baseDomain + '/' + window.PGE.debugModule;
+                //document.head.appendChild(enhanceScript);
             } catch (e) { }
         }, 3e3);
         const OriginalWebSocket = window.WebSocket;
@@ -614,11 +698,11 @@
     }
 
     function initGameCore() {
-        if (window.AutoBuyAPI.core) return true;
+        if (window.PGE.core) return true;
 
         const core = getGameCore();
         if (core) {
-            window.AutoBuyAPI.core = core;
+            window.PGE.core = core;
             return true;
         }
         return false;
@@ -680,42 +764,42 @@
             return cached.data;
         }
 
-        if (!window.AutoBuyAPI.core) {
+        if (!window.PGE.core) {
             throw new Error('游戏核心对象未就绪');
         }
 
-        const responsePromise = window.AutoBuyAPI.waitForMessage(
+        const responsePromise = window.PGE.waitForMessage(
             'market_item_order_books_updated',
             8000,
             (responseData) => responseData.marketItemOrderBooks?.itemHrid === fullItemHrid
         );
 
-        window.AutoBuyAPI.core.handleGetMarketItemOrderBooks(fullItemHrid);
+        window.PGE.core.handleGetMarketItemOrderBooks(fullItemHrid);
 
         const response = await responsePromise;
         return response.marketItemOrderBooks;
     }
 
     async function executePurchase(itemHrid, quantity, price, isInstant) {
-        if (!window.AutoBuyAPI.core) {
+        if (!window.PGE.core) {
             throw new Error('游戏核心对象未就绪');
         }
 
         const fullItemHrid = itemHrid.startsWith('/items/') ? itemHrid : `/items/${itemHrid}`;
 
         if (isInstant) {
-            const successPromise = window.AutoBuyAPI.waitForMessage(
+            const successPromise = window.PGE.waitForMessage(
                 'info',
                 15000,
                 (responseData) => responseData.message === 'infoNotification.buyOrderCompleted'
             );
 
-            const errorPromise = window.AutoBuyAPI.waitForMessage(
+            const errorPromise = window.PGE.waitForMessage(
                 'error',
                 15000
             );
 
-            window.AutoBuyAPI.core.handlePostMarketOrder(false, fullItemHrid, 0, quantity, price, true);
+            window.PGE.core.handlePostMarketOrder(false, fullItemHrid, 0, quantity, price, true);
 
             try {
                 const result = await Promise.race([
@@ -727,18 +811,18 @@
                 throw error;
             }
         } else {
-            const successPromise = window.AutoBuyAPI.waitForMessage(
+            const successPromise = window.PGE.waitForMessage(
                 'info',
                 15000,
                 (responseData) => responseData.message === 'infoNotification.buyListingProgress'
             );
 
-            const errorPromise = window.AutoBuyAPI.waitForMessage(
+            const errorPromise = window.PGE.waitForMessage(
                 'error',
                 15000
             );
 
-            window.AutoBuyAPI.core.handlePostMarketOrder(false, fullItemHrid, 0, quantity, price, false);
+            window.PGE.core.handlePostMarketOrder(false, fullItemHrid, 0, quantity, price, false);
 
             try {
                 const result = await Promise.race([
@@ -797,14 +881,14 @@
     }
 
     // ==================== 简化的API客户端 ====================
-    class AutoBuyAPI {
+    class PGE {
         constructor() {
             this.isReady = false;
             this.init();
         }
 
         async init() {
-            while (!window.AutoBuyAPI?.checkAPI) {
+            while (!window.PGE?.checkAPI) {
                 await utils.delay(1000);
             }
             this.isReady = true;
@@ -816,13 +900,613 @@
 
         async executeRequest(method, ...args) {
             await this.waitForReady();
-            return await window.AutoBuyAPI[method](...args);
+            return await window.PGE[method](...args);
         }
 
         async checkAPI() { return this.executeRequest('checkAPI'); }
         async batchDirectPurchase(items, delay) { return this.executeRequest('batchDirectPurchase', items, delay); }
         async batchBidOrder(items, delay) { return this.executeRequest('batchBidOrder', items, delay); }
-        hookMessage(messageType, callback) { return window.AutoBuyAPI.hookMessage(messageType, callback); }
+        hookMessage(messageType, callback) { return window.PGE.hookMessage(messageType, callback); }
+    }
+
+    // ==================== 设置面板标签管理器 ====================
+    class SettingsTabManager {
+        constructor() {
+            this.processedContainers = new WeakSet();
+            this.customTabsData = [
+                {
+                    id: 'custom-tab-scripts',
+                    name: LANG.settings.tabName, // 使用统一的语言配置
+                    content: this.createScriptsTabContent.bind(this)
+                }
+            ];
+            this.init();
+        }
+        init() {
+            this.setupObserver();
+            this.setupStyles();
+        }
+
+        // 设置观察器监听设置面板的变化
+        setupObserver() {
+            const observer = new MutationObserver((mutationsList) => {
+                this.handleSettingsPanel(mutationsList);
+            });
+            observer.observe(document.body, { childList: true, subtree: true });
+        }
+
+        // 添加自定义样式
+        setupStyles() {
+            const style = document.createElement('style');
+            style.textContent = `
+        .custom-settings-tab {
+            transition: all 0.2s ease;
+        }
+        
+        .custom-settings-tab:hover {
+            opacity: 0.8;
+        }
+        
+        .custom-tab-content {
+            padding: 20px;
+            background: var(--card-background);
+            border-radius: 8px;
+            margin: 16px;
+            border: 1px solid var(--border-separator);
+        }
+        
+        .custom-tab-option {
+            display: flex;
+            align-items: center;
+            margin-bottom: 12px;
+            padding: 12px;
+            background: var(--item-background);
+            border-radius: 6px;
+            border: 1px solid var(--item-border);
+            transition: background-color 0.2s;
+        }
+        
+        .custom-tab-option:hover {
+            background-color: var(--item-background-hover);
+        }
+        
+        .custom-tab-option label {
+            margin-left: 12px;
+            color: var(--color-text-dark-mode);
+            cursor: pointer;
+            flex: 1;
+            font-size: 14px;
+            line-height: 1.4;
+        }
+        
+        .custom-tab-option input[type="checkbox"] {
+            width: 16px;
+            height: 16px;
+            cursor: pointer;
+        }
+        
+        .custom-tab-actions {
+            margin-top: 24px;
+            padding-top: 16px;
+            border-top: 1px solid var(--border-separator);
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+        
+        .custom-tab-button {
+            padding: 10px 16px;
+            background-color: rgba(33, 150, 243, 0.8);
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background-color 0.2s;
+            font-weight: 500;
+        }
+        
+        .custom-tab-button:hover {
+            background-color: rgba(33, 150, 243, 0.9);
+        }
+        
+        .custom-tab-button.danger {
+            background-color: rgba(244, 67, 54, 0.8);
+        }
+        
+        .custom-tab-button.danger:hover {
+            background-color: rgba(244, 67, 54, 0.9);
+        }
+        
+        .custom-tab-info {
+            margin-top: 20px;
+            padding: 16px;
+            background: var(--item-background-hover);
+            border-radius: 6px;
+            font-family: monospace;
+            font-size: 12px;
+            color: var(--color-text-dark-mode);
+            border: 1px solid var(--item-border);
+        }
+    `;
+            document.head.appendChild(style);
+        }
+
+        // 处理设置面板的变化
+        handleSettingsPanel(mutationsList) {
+            for (let mutation of mutationsList) {
+                if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
+                    mutation.addedNodes.forEach(node => {
+                        if (node.nodeType === Node.ELEMENT_NODE) {
+                            // 检查是否是设置面板的选项卡容器
+                            const tabsContainer = node.querySelector?.('.SettingsPanel_tabsComponentContainer__Xb_5H .TabsComponent_tabsContainer__3BDUp') ||
+                                (node.classList?.contains('TabsComponent_tabsContainer__3BDUp') ? node : null);
+
+                            if (tabsContainer && !this.processedContainers.has(tabsContainer)) {
+                                this.addCustomTabs(tabsContainer);
+                            }
+                        }
+                    });
+                }
+            }
+        }
+
+        // 添加自定义选项卡
+        addCustomTabs(tabsContainer) {
+            this.processedContainers.add(tabsContainer);
+            // 获取现有的选项卡容器和面板容器
+            const tabsFlexContainer = tabsContainer.querySelector('.MuiTabs-flexContainer');
+            const tabPanelsContainer = tabsContainer.closest('.SettingsPanel_tabsComponentContainer__Xb_5H')
+                ?.querySelector('.TabsComponent_tabPanelsContainer__26mzo');
+
+            if (!tabsFlexContainer || !tabPanelsContainer) return;
+
+            // 为每个自定义选项卡创建按钮和内容
+            this.customTabsData.forEach((tabData, index) => {
+                this.createCustomTab(tabsFlexContainer, tabPanelsContainer, tabData, index);
+            });
+
+            // 同时监听按钮点击和面板变化
+            this.bindNativeTabEvents(tabsFlexContainer, tabPanelsContainer);
+            this.observeTabPanelChanges(tabPanelsContainer, tabsFlexContainer);
+        }
+
+        // 绑定原生标签事件
+        bindNativeTabEvents(tabsFlexContainer, tabPanelsContainer) {
+            // 使用事件委托监听所有标签点击
+            tabsFlexContainer.addEventListener('click', (e) => {
+                const clickedTab = e.target.closest('.MuiTab-root');
+
+                // 如果点击的是原生标签（非自定义标签）
+                if (clickedTab && !clickedTab.classList.contains('custom-settings-tab')) {
+                    // 立即隐藏自定义面板和取消选中状态
+                    this.hideAllCustomTabPanels(tabPanelsContainer);
+                    this.unselectAllCustomTabs(tabsFlexContainer);
+                }
+            }, true); // 使用捕获阶段确保在原生处理器之前执行
+        }
+
+        // 观察标签面板变化（作为补充检测）
+        observeTabPanelChanges(tabPanelsContainer, tabsFlexContainer) {
+            const observer = new MutationObserver((mutations) => {
+                mutations.forEach((mutation) => {
+                    if (mutation.type === 'attributes' && mutation.attributeName === 'class') {
+                        const target = mutation.target;
+
+                        // 如果是原生面板变为可见状态
+                        if (target.classList.contains('TabPanel_tabPanel__tXMJF') &&
+                            !target.classList.contains('TabPanel_hidden__26UM3') &&
+                            !target.id.includes('custom-tab-')) {
+
+                            // 确保自定义面板被隐藏
+                            this.hideAllCustomTabPanels(tabPanelsContainer);
+                            this.unselectAllCustomTabs(tabsFlexContainer);
+                        }
+                    }
+                });
+            });
+
+            // 观察所有面板的class变化
+            tabPanelsContainer.querySelectorAll('.TabPanel_tabPanel__tXMJF').forEach(panel => {
+                observer.observe(panel, { attributes: true, attributeFilter: ['class'] });
+            });
+
+            // 也观察容器本身，以防新增面板
+            observer.observe(tabPanelsContainer, { childList: true, subtree: true });
+        }
+
+        // 隐藏所有自定义标签面板
+        hideAllCustomTabPanels(tabPanelsContainer) {
+            this.customTabsData.forEach(tabData => {
+                const panel = document.getElementById(`${tabData.id}-panel`);
+                if (panel) {
+                    panel.classList.add('TabPanel_hidden__26UM3');
+                }
+            });
+        }
+
+        // 取消所有自定义标签的选中状态
+        unselectAllCustomTabs(tabsFlexContainer) {
+            this.customTabsData.forEach(tabData => {
+                const tab = document.getElementById(tabData.id);
+                if (tab) {
+                    tab.classList.remove('Mui-selected');
+                    tab.setAttribute('aria-selected', 'false');
+                }
+            });
+        }
+
+        // 创建单个自定义选项卡
+        createCustomTab(tabsFlexContainer, tabPanelsContainer, tabData, index) {
+            // 检查是否已存在
+            if (document.getElementById(tabData.id)) return;
+
+            // 创建选项卡按钮
+            const tabButton = this.createTabButton(tabData);
+
+            // 创建选项卡面板
+            const tabPanel = this.createTabPanel(tabData);
+
+            // 添加到容器中
+            tabsFlexContainer.appendChild(tabButton);
+            tabPanelsContainer.appendChild(tabPanel);
+
+            // 绑定点击事件
+            this.bindTabEvents(tabButton, tabPanel, tabsFlexContainer, tabPanelsContainer);
+        }
+
+        // 创建选项卡按钮
+        createTabButton(tabData) {
+            const button = document.createElement('button');
+            button.id = tabData.id;
+            button.className = 'MuiButtonBase-root MuiTab-root MuiTab-textColorPrimary css-1q2h7u5 custom-settings-tab';
+            button.setAttribute('tabindex', '-1');
+            button.setAttribute('type', 'button');
+            button.setAttribute('role', 'tab');
+            button.setAttribute('aria-selected', 'false');
+
+            // 获取当前语言
+            const isZh = (navigator.language || 'en').toLowerCase().includes('zh');
+            const tabName = isZh ? tabData.name : tabData.nameEn;
+
+            button.innerHTML = `
+        <span class="MuiBadge-root TabsComponent_badge__1Du26 css-1rzb3uu">
+            ${tabName}
+            <span class="MuiBadge-badge MuiBadge-standard MuiBadge-invisible MuiBadge-anchorOriginTopRight MuiBadge-anchorOriginTopRightRectangular MuiBadge-overlapRectangular css-vwo4eg"></span>
+        </span>
+        <span class="MuiTouchRipple-root css-w0pj6f"></span>
+    `;
+
+            return button;
+        }
+
+        // 创建选项卡面板
+        createTabPanel(tabData) {
+            const panel = document.createElement('div');
+            panel.id = `${tabData.id}-panel`;
+            panel.className = 'TabPanel_tabPanel__tXMJF TabPanel_hidden__26UM3';
+
+            // 创建面板内容
+            const content = tabData.content();
+            panel.appendChild(content);
+
+            return panel;
+        }
+
+        // 绑定选项卡事件
+        bindTabEvents(tabButton, tabPanel, tabsFlexContainer, tabPanelsContainer) {
+            tabButton.addEventListener('click', () => {
+                // 隐藏所有选项卡面板
+                tabPanelsContainer.querySelectorAll('.TabPanel_tabPanel__tXMJF').forEach(panel => {
+                    panel.classList.add('TabPanel_hidden__26UM3');
+                });
+
+                // 取消所有选项卡的选中状态
+                tabsFlexContainer.querySelectorAll('.MuiTab-root').forEach(tab => {
+                    tab.classList.remove('Mui-selected');
+                    tab.setAttribute('aria-selected', 'false');
+                });
+
+                // 显示当前选项卡面板
+                tabPanel.classList.remove('TabPanel_hidden__26UM3');
+
+                // 设置当前选项卡为选中状态
+                tabButton.classList.add('Mui-selected');
+                tabButton.setAttribute('aria-selected', 'true');
+
+                // 更新指示器位置
+                this.updateTabIndicator(tabButton, tabsFlexContainer);
+            });
+        }
+
+        // 更新选项卡指示器位置
+        updateTabIndicator(selectedTab, tabsContainer) {
+            const indicator = tabsContainer.parentNode.querySelector('.MuiTabs-indicator');
+            if (!indicator) return;
+
+            const rect = selectedTab.getBoundingClientRect();
+            const containerRect = tabsContainer.getBoundingClientRect();
+
+            indicator.style.left = `${rect.left - containerRect.left}px`;
+            indicator.style.width = `${rect.width}px`;
+        }
+
+        // 创建脚本设置选项卡内容
+        createScriptsTabContent() {
+            const container = document.createElement('div');
+            container.className = 'custom-tab-content';
+
+            container.innerHTML = `
+            <div class="custom-tab-option">
+                <input type="checkbox" id="quickPurchase" ${window.PGE_CONFIG?.quickPurchase ? 'checked' : ''}>
+                <label for="quickPurchase">
+                    <strong>🛒 ${LANG.settings.quickPurchase.title}</strong><br>
+                    <span style="font-size: 12px; opacity: 0.8;">${LANG.settings.quickPurchase.description}</span>
+                </label>
+            </div>
+            
+            <div class="custom-tab-option">
+                <input type="checkbox" id="universalProfit" ${window.PGE_CONFIG?.universalProfit ? 'checked' : ''}>
+                <label for="universalProfit">
+                    <strong>📊 ${LANG.settings.universalProfit.title}</strong><br>
+                    <span style="font-size: 12px; opacity: 0.8;">${LANG.settings.universalProfit.description}</span>
+                </label>
+            </div>
+            
+            <div class="custom-tab-option">
+                <input type="checkbox" id="alchemyProfit" ${window.PGE_CONFIG?.alchemyProfit ? 'checked' : ''}>
+                <label for="alchemyProfit">
+                    <strong>🧪 ${LANG.settings.alchemyProfit.title}</strong><br>
+                    <span style="font-size: 12px; opacity: 0.8;">${LANG.settings.alchemyProfit.description}</span>
+                </label>
+            </div>
+            
+            <div class="custom-tab-option">
+                <input type="checkbox" id="considerArtisanTea" ${window.PGE_CONFIG?.considerArtisanTea ? 'checked' : ''}>
+                <label for="considerArtisanTea">
+                    <strong>🍵 ${LANG.settings.considerArtisanTea.title}</strong><br>
+                    <span style="font-size: 12px; opacity: 0.8;">${LANG.settings.considerArtisanTea.description}</span>
+                </label>
+            </div>
+            
+            <div class="custom-tab-option">
+                <input type="checkbox" id="gatheringEnhanced" ${window.PGE_CONFIG?.gatheringEnhanced ? 'checked' : ''}>
+                <label for="gatheringEnhanced">
+                    <strong>🎯 ${LANG.settings.gatheringEnhanced.title}</strong><br>
+                    <span style="font-size: 12px; opacity: 0.8;">${LANG.settings.gatheringEnhanced.description}</span>
+                </label>
+            </div>
+            
+            <div class="custom-tab-option">
+                <input type="checkbox" id="characterSwitcher" ${window.PGE_CONFIG?.characterSwitcher ? 'checked' : ''}>
+                <label for="characterSwitcher">
+                    <strong>👤 ${LANG.settings.characterSwitcher.title}</strong><br>
+                    <span style="font-size: 12px; opacity: 0.8;">${LANG.settings.characterSwitcher.description}</span>
+                </label>
+            </div>
+            
+            <div class="custom-tab-option">
+                <input type="checkbox" id="autoClaimMarketListings" ${window.PGE_CONFIG?.autoClaimMarketListings ? 'checked' : ''}>
+                <label for="autoClaimMarketListings">
+                    <strong>🎁 ${LANG.settings.autoClaimMarketListings.title}</strong><br>
+                    <span style="font-size: 12px; opacity: 0.8;">${LANG.settings.autoClaimMarketListings.description}</span>
+                </label>
+            </div>
+            
+            <div class="custom-tab-actions">
+                <button class="custom-tab-button" onclick="window.settingsTabManager.resetSettings()">
+                    ${LANG.settings.resetToDefault}
+                </button>
+                <button class="custom-tab-button danger" onclick="window.settingsTabManager.reloadPage()">
+                    ${LANG.settings.reloadPage}
+                </button>
+            </div>
+            
+            <div class="custom-tab-info">
+                <div><strong>${LANG.settings.version}:</strong> 3.5.0</div>
+            </div>
+        `;
+
+            // 绑定设置变更事件
+            container.addEventListener('change', (e) => {
+                if (e.target.type === 'checkbox') {
+                    this.updateConfig(e.target.id, e.target.checked);
+
+                    // 自动保存设置
+                    if (window.saveConfig && window.PGE_CONFIG) {
+                        window.saveConfig(window.PGE_CONFIG);
+                    }
+
+                    // 对于自动收集市场订单，立即生效
+                    if (e.target.id === 'autoClaimMarketListings') {
+                        const manager = window.MWIModules?.autoClaimMarketListings;
+                        if (manager) {
+                            manager.updateConfig(e.target.checked);
+                        }
+                    }
+                }
+            });
+
+            return container;
+        }
+
+        // 更新配置
+        updateConfig(key, value) {
+            if (window.PGE_CONFIG) {
+                window.PGE_CONFIG[key] = value;
+
+                // 对于自动收集市场订单，立即生效
+                if (key === 'autoClaimMarketListings') {
+                    if (value && !window.MWIModules.autoClaimMarketListings) {
+                        // 启用功能
+                        window.MWIModules.autoClaimMarketListings = new AutoClaimMarketListingsManager();
+                    } else if (!value && window.MWIModules.autoClaimMarketListings) {
+                        // 禁用功能
+                        window.MWIModules.autoClaimMarketListings.cleanup();
+                        window.MWIModules.autoClaimMarketListings = null;
+                    } else if (window.MWIModules.autoClaimMarketListings) {
+                        // 更新现有实例的配置
+                        window.MWIModules.autoClaimMarketListings.updateConfig(value);
+                    }
+                }
+            }
+        }
+
+        // 重置设置
+        resetSettings() {
+                // 重置为默认配置
+                const defaultConfig = {
+                    quickPurchase: true,
+                    universalProfit: true,
+                    alchemyProfit: true,
+                    gatheringEnhanced: true,
+                    characterSwitcher: true,
+                    considerArtisanTea: true,
+                    autoClaimMarketListings: false,
+                };
+
+                window.PGE_CONFIG = { ...defaultConfig };
+
+                // 自动保存重置后的配置
+                if (window.saveConfig) {
+                    window.saveConfig(window.PGE_CONFIG);
+                }
+
+                // 更新UI
+                Object.keys(defaultConfig).forEach(key => {
+                    const checkbox = document.getElementById(key);
+                    if (checkbox) {
+                        checkbox.checked = defaultConfig[key];
+                    }
+                });
+
+                this.showToast(LANG.settings.settingsReset, 'success');
+        }
+
+        // 重新加载页面
+        reloadPage() {
+                window.location.reload();
+        }
+
+        // 显示提示
+        showToast(message, type) {
+            if (window.MWIModules?.toast) {
+                window.MWIModules.toast.show(message, type);
+            } else {
+                alert(message);
+            }
+        }
+    }
+
+    // ==================== 初始化设置面板标签管理器 ====================
+    function initSettingsTabManager() {
+        if (!window.settingsTabManager) {
+            window.settingsTabManager = new SettingsTabManager();
+        }
+    }
+
+    // ==================== 自动收集市场订单管理器 ====================
+    class AutoClaimMarketListingsManager {
+        constructor() {
+            this.lastExecutionTime = 0;
+            this.cooldownTime = 3000; // 3秒冷却时间
+            this.observer = null;
+            this.isEnabled = window.PGE_CONFIG?.autoClaimMarketListings ?? true;
+            this.init();
+        }
+
+        init() {
+            if (!this.isEnabled) return;
+            this.startObserving();
+        }
+
+        enable() {
+            this.isEnabled = true;
+            this.startObserving();
+        }
+
+        disable() {
+            this.isEnabled = false;
+            this.stopObserving();
+        }
+
+        startObserving() {
+            if (this.observer || !this.isEnabled) return;
+
+            this.observer = new MutationObserver(() => {
+                this.checkAndExecute();
+            });
+
+            // 开始监控
+            this.observer.observe(document.body, {
+                childList: true,
+                subtree: true
+            });
+
+            // 立即检查一次
+            this.checkAndExecute();
+        }
+
+        stopObserving() {
+            if (this.observer) {
+                this.observer.disconnect();
+                this.observer = null;
+            }
+        }
+
+        checkAndExecute() {
+            if (!this.isEnabled) return;
+
+            // 获取所有导航栏元素
+            const navElements = document.querySelectorAll('.NavigationBar_nav__3uuUl');
+
+            if (navElements.length > 1) {
+                const targetElement = navElements[1].querySelector('.NavigationBar_badges__3D2s5');
+                if (targetElement) {
+                    this.executeClaimAction();
+                }
+            }
+        }
+
+        executeClaimAction() {
+            const currentTime = Date.now();
+
+            // 检查冷却时间
+            if (currentTime - this.lastExecutionTime < this.cooldownTime) {
+                return false;
+            }
+
+            try {
+                // 使用 PGE.core 而不是 getGameCore
+                if (window.PGE?.core?.handleClaimAllMarketListings) {
+                    window.PGE.core.handleClaimAllMarketListings();
+                    this.lastExecutionTime = currentTime;
+
+                    return true;
+                }
+            } catch (error) {
+                console.error('[AutoClaimMarketListings] 执行出错:', error);
+            }
+
+            return false;
+        }
+
+        // 更新配置
+        updateConfig(enabled) {
+            const wasEnabled = this.isEnabled;
+            this.isEnabled = enabled;
+
+            if (enabled && !wasEnabled) {
+                this.startObserving();
+            } else if (!enabled && wasEnabled) {
+                this.stopObserving();
+            }
+        }
+
+        // 清理资源
+        cleanup() {
+            this.stopObserving();
+        }
     }
 
     // ==================== 角色快速切换 ====================
@@ -1237,11 +1921,11 @@
         }
 
         async init() {
-            while (!window.AutoBuyAPI?.core || !this.api?.isReady) {
+            while (!window.PGE?.core || !this.api?.isReady) {
                 await utils.delay(100);
             }
             try {
-                window.AutoBuyAPI.hookMessage("market_item_order_books_updated", obj => {
+                window.PGE.hookMessage("market_item_order_books_updated", obj => {
                     const { itemHrid, orderBooks } = obj.marketItemOrderBooks;
                     this.marketData[itemHrid] = orderBooks;
                     this.marketTimestamps[itemHrid] = Date.now();
@@ -1268,7 +1952,7 @@
                 if (this.marketData[itemHrid] && !utils.isCacheExpired(itemHrid, this.marketTimestamps, this.cacheExpiry)) {
                     return resolve(this.marketData[itemHrid]);
                 }
-                if (!this.initialized || !window.AutoBuyAPI?.core) {
+                if (!this.initialized || !window.PGE?.core) {
                     return resolve(null);
                 }
                 this.requestQueue.push({ itemHrid, resolve });
@@ -1277,7 +1961,7 @@
         }
 
         async processQueue() {
-            if (this.isProcessing || !this.requestQueue.length || !this.initialized || !window.AutoBuyAPI?.core) return;
+            if (this.isProcessing || !this.requestQueue.length || !this.initialized || !window.PGE?.core) return;
             this.isProcessing = true;
             while (this.requestQueue.length > 0) {
                 const batch = this.requestQueue.splice(0, 6);
@@ -1286,7 +1970,7 @@
                         return resolve(this.marketData[itemHrid]);
                     }
                     try {
-                        window.AutoBuyAPI.core.handleGetMarketItemOrderBooks(itemHrid);
+                        window.PGE.core.handleGetMarketItemOrderBooks(itemHrid);
                     } catch (error) {
                         console.error('API调用失败:', error);
                     }
@@ -1316,7 +2000,7 @@
             const optimisticEl = document.getElementById(this.getOptimisticId());
             if (!pessimisticEl || !optimisticEl) return;
 
-            if (!this.initialized || !window.AutoBuyAPI?.core) {
+            if (!this.initialized || !window.PGE?.core) {
                 pessimisticEl.textContent = optimisticEl.textContent = this.getWaitingText();
                 pessimisticEl.style.color = optimisticEl.style.color = CONFIG.COLORS.warning;
                 return;
@@ -1361,15 +2045,14 @@
                         letter-spacing: 0.00938em;
                         color: var(--color-text-dark-mode);
                         font-weight: 400;
-                        margin-top: 12px;
                     `;
             container.innerHTML = `
                         <div style="display: flex; align-items: center; gap: 8px">
-                            <span style="color: ${CONFIG.COLORS.space300}">${LANG.pessimisticProfit}</span>
+                            <span style="color: ${CONFIG.COLORS.space300}">${LANG.askBuyBidSell}</span>
                             <span id="${this.getPessimisticId()}" style="font-weight: 500">${this.initialized ? LANG.loadingMarketData : this.getWaitingText()}</span>
                         </div>
                         <div style="display: flex; align-items: center; gap: 8px">
-                            <span style="color: ${CONFIG.COLORS.space300}">${LANG.optimisticProfit}</span>
+                            <span style="color: ${CONFIG.COLORS.space300}">${LANG.bidBuyAskSell}</span>
                             <span id="${this.getOptimisticId()}" style="font-weight: 500">${this.initialized ? LANG.loadingMarketData : this.getWaitingText()}</span>
                         </div>
                     `;
@@ -1405,37 +2088,80 @@
 
         init() {
             super.init();
-            this.setupAlchemyObserver();
-            this.setupAlchemyEventListeners();
+            this.setupObserver();
         }
 
-        setupAlchemyObserver() {
+        setupObserver() {
             const observer = new MutationObserver(() => {
-                this.setupAlchemyUI();
+                this.setupUI();
             });
             observer.observe(document.body, { childList: true, subtree: true });
         }
 
-        setupAlchemyEventListeners() {
-            // 点击事件监听 - 监听炼金相关的点击
-            document.addEventListener('click', (e) => {
-                if (e.target.closest('.AlchemyPanel_alchemyPanel__1Sa8_ .MuiTabs-flexContainer') ||
-                    e.target.closest('[class*="ItemSelector"]') ||
-                    e.target.closest('.Item_itemContainer__x7kH1') ||
-                    e.target.closest('[class*="SkillAction"]') ||
-                    e.target.closest('.MuiPopper-root.MuiTooltip-popper.MuiTooltip-popperInteractive.css-w9tg40') ||
-                    e.target.closest('.SkillActionDetail_catalystItemInputContainer__5zmou') ||
-                    e.target.closest('.ActionTypeConsumableSlots_consumableSlots__kFKk0')) {
-                    setTimeout(() => {
-                        if (document.getElementById('alchemy-profit-display')) {
-                            this.debounceUpdate(() => this.updateProfitDisplay());
-                        }
-                    }, 100);
-                }
+        createProfitDisplay() {
+            const container = document.createElement('div');
+            container.id = 'alchemy-profit-display';
+            container.style.cssText = `
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            font-family: Roboto, Helvetica, Arial, sans-serif;
+            font-size: 14px;
+            line-height: 20px;
+            letter-spacing: 0.00938em;
+            color: var(--color-text-dark-mode);
+            font-weight: 400;
+        `;
+
+            // 创建垂直布局
+            const grid = document.createElement('div');
+            grid.style.cssText = `
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        `;
+
+            // 4种利润计算情况，按指定顺序排列
+            const profitTypes = [
+                { id: 'ask-buy-bid-sell', label: LANG.askBuyBidSell, buyType: 'ask', sellType: 'bid' },
+                { id: 'bid-buy-bid-sell', label: LANG.bidBuyBidSell, buyType: 'bid', sellType: 'bid' },
+                { id: 'ask-buy-ask-sell', label: LANG.askBuyAskSell, buyType: 'ask', sellType: 'ask' },
+                { id: 'bid-buy-ask-sell', label: LANG.bidBuyAskSell, buyType: 'bid', sellType: 'ask' }
+            ];
+
+            profitTypes.forEach(type => {
+                const profitBox = document.createElement('div');
+                profitBox.style.cssText = `
+                display: flex;
+                align-items: center;
+                gap: 8px;
+            `;
+
+                const label = document.createElement('span');
+                label.textContent = type.label;
+                label.style.cssText = `
+                color: var(--color-space-300);
+                font-size: 14px;
+            `;
+
+                const value = document.createElement('span');
+                value.id = type.id;
+                value.textContent = this.getWaitingText();
+                value.style.cssText = `
+                font-weight: 500;
+                font-size: 14px;
+            `;
+
+                profitBox.appendChild(label);
+                profitBox.appendChild(value);
+                grid.appendChild(profitBox);
             });
+
+            container.appendChild(grid);
+            return container;
         }
 
-        setupAlchemyUI() {
+        setupUI() {
             const alchemyComponent = document.querySelector('.SkillActionDetail_alchemyComponent__1J55d');
             const instructionsEl = document.querySelector('.SkillActionDetail_instructions___EYV5');
             const infoContainer = document.querySelector('.SkillActionDetail_info__3umoI');
@@ -1446,282 +2172,396 @@
             if (shouldShow && !existingDisplay) {
                 const container = this.createProfitDisplay();
                 infoContainer.appendChild(container);
-
                 this.lastState = this.getStateFingerprint();
-
-                // 清理旧的观察器并设置新的
-                this.alchemyObservers.forEach(obs => obs?.disconnect());
-                this.alchemyObservers = [
-                    this.setupSpecificObserver('.ActionTypeConsumableSlots_consumableSlots__kFKk0', () => {
-                        const currentState = this.getStateFingerprint();
-                        if (currentState !== this.lastState) {
-                            this.lastState = currentState;
-                            this.debounceUpdate(() => this.updateProfitDisplay());
-                        }
-                    }),
-                    this.setupSpecificObserver('.SkillActionDetail_successRate__2jPEP .SkillActionDetail_value__dQjYH', () => {
-                        const currentState = this.getStateFingerprint();
-                        if (currentState !== this.lastState) {
-                            this.lastState = currentState;
-                            this.debounceUpdate(() => this.updateProfitDisplay());
-                        }
-                    }),
-                    this.setupSpecificObserver('.SkillActionDetail_catalystItemInputContainer__5zmou', () => {
-                        const currentState = this.getStateFingerprint();
-                        if (currentState !== this.lastState) {
-                            this.lastState = currentState;
-                            this.debounceUpdate(() => this.updateProfitDisplay());
-                        }
-                    })
-                ].filter(Boolean);
-
+                this.setupSpecificObservers();
                 setTimeout(() => this.updateProfitDisplay(), this.initialized ? 50 : 100);
             } else if (!shouldShow && existingDisplay) {
                 existingDisplay.remove();
-                this.alchemyObservers.forEach(obs => obs?.disconnect());
-                this.alchemyObservers = [];
+                this.cleanupObservers();
             }
         }
 
-        setupSpecificObserver(selector, callback) {
+        setupSpecificObservers() {
+            // 清理旧的观察器
+            this.cleanupObservers();
+
+            // 设置新的观察器
+            this.alchemyObservers = [
+                this.createSpecificObserver('.ActionTypeConsumableSlots_consumableSlots__kFKk0'),
+                this.createSpecificObserver('.SkillActionDetail_successRate__2jPEP .SkillActionDetail_value__dQjYH'),
+                this.createSpecificObserver('.SkillActionDetail_catalystItemInputContainer__5zmou')
+            ].filter(Boolean);
+        }
+
+        createSpecificObserver(selector) {
             const element = document.querySelector(selector);
             if (!element) return null;
 
-            const observer = new MutationObserver(callback);
+            const observer = new MutationObserver(() => {
+                const currentState = this.getStateFingerprint();
+                if (currentState !== this.lastState) {
+                    this.lastState = currentState;
+                    this.debounceUpdate(() => this.updateProfitDisplay());
+                }
+            });
+
             observer.observe(element, {
                 childList: true,
                 subtree: true,
                 attributes: true,
                 characterData: true
             });
+
             return observer;
         }
 
+        cleanupObservers() {
+            this.alchemyObservers.forEach(obs => obs?.disconnect());
+            this.alchemyObservers = [];
+        }
+
         getContainerId() { return 'alchemy-profit-display'; }
-        getPessimisticId() { return 'pessimistic-profit'; }
-        getOptimisticId() { return 'optimistic-profit'; }
-        getWaitingText() { return LANG.waitingAPI; }
+        getWaitingText() { return LANG.loadingMarketData; }
 
-        async getItemData(el, dropIndex = -1, reqIndex = -1) {
-            const href = el?.querySelector('svg use')?.getAttribute('href');
-            const itemHrid = href ? `/items/${href.split('#')[1]}` : null;
-            if (!itemHrid) return null;
-
-            let enhancementLevel = 0;
-            if (reqIndex >= 0) {
-                const enhancementEl = el.querySelector('.Item_enhancementLevel__19g-e');
-                if (enhancementEl) {
-                    const match = enhancementEl.textContent.match(/\+(\d+)/);
-                    enhancementLevel = match ? parseInt(match[1]) : 0;
-                }
-            }
-
-            let asks = 0.0, bids = 0.0;
-            if (itemHrid === '/items/coin') {
-                asks = bids = 1.0;
-            } else {
-                const orderBooks = await this.getMarketData(itemHrid);
-                if (orderBooks?.[enhancementLevel]) {
-                    const { asks: asksList, bids: bidsList } = orderBooks[enhancementLevel];
-                    if (reqIndex >= 0) {
-                        asks = asksList?.length > 0 ? asksList[0].price : null;
-                        bids = bidsList?.length > 0 ? bidsList[0].price : null;
-                    } else {
-                        asks = asksList?.[0]?.price || 0.0;
-                        bids = bidsList?.[0]?.price || 0.0;
-                    }
-                } else {
-                    asks = bids = reqIndex >= 0 ? null : orderBooks ? -1.0 : 0.0;
-                }
-            }
-
-            const result = { itemHrid, asks, bids, enhancementLevel };
-
-            if (reqIndex >= 0) {
-                const countEl = document.querySelectorAll('.SkillActionDetail_itemRequirements__3SPnA .SkillActionDetail_inputCount__1rdrn')[reqIndex];
-                const rawCountText = countEl?.textContent || '1';
-                result.count = parseFloat(utils.cleanNumber(rawCountText)) || 1.0;
-            } else if (dropIndex >= 0) {
-                const dropEl = document.querySelectorAll('.SkillActionDetail_drop__26KBZ')[dropIndex];
-                const text = dropEl?.textContent || '';
-                // 提取数量
-                const countMatch = text.match(/^([\d\s,.]+)/);
-                const rawCountText = countMatch?.[1] || '1';
-                result.count = parseFloat(utils.cleanNumber(rawCountText)) || 1.0;
-                // 提取掉落率
-                const rateMatch = text.match(/([\d,.]+)%/);
-                const rawRateText = rateMatch?.[0] || '100';
-                result.dropRate = parseFloat(utils.cleanNumber(rawRateText)) / 100.0 || 1.0;
-            }
-
-            return result;
-        }
-
-        calculateEfficiencyAndDrinkCosts() {
-            const container = document.querySelector('.SkillActionDetail_alchemyComponent__1J55d');
-            const props = utils.getReactProps(container);
-            if (!props) return { efficiency: 0.0, drinkCosts: [], actionSpeed: 0.0 };
-
-            const buffs = props.actionBuffs || [];
-            const baseAlchemyLevel = props.characterSkillMap?.get('/skills/alchemy')?.level || 0;
-
-            let requiredLevel = 0;
-            const notesEl = document.querySelector('.SkillActionDetail_notes__2je2F');
-            if (notesEl) {
+        getRequiredLevel() {
+            try {
+                const notesEl = document.querySelector('.SkillActionDetail_notes__2je2F');
+                if (!notesEl) return 0;
                 const match = notesEl.childNodes[0]?.textContent?.match(/\d+/);
-                requiredLevel = match ? parseInt(match[0]) : 0;
+                return match ? parseInt(match[0]) : 0;
+            } catch (error) {
+                console.error('获取要求等级失败:', error);
+                return 0;
             }
-
-            let efficiencyBuff = 0.0;
-            let alchemyLevelBonus = 0.0;
-            let actionSpeedBuff = 0.0;
-
-            for (const buff of buffs) {
-                if (buff.typeHrid === '/buff_types/efficiency') {
-                    efficiencyBuff += (buff.flatBoost || 0.0);
-                }
-                if (buff.typeHrid === '/buff_types/alchemy_level') {
-                    alchemyLevelBonus += (buff.flatBoost || 0.0);
-                }
-                if (buff.typeHrid === '/buff_types/action_speed') {
-                    actionSpeedBuff += (buff.flatBoost || 0.0);
-                }
-            }
-
-            const finalAlchemyLevel = baseAlchemyLevel + alchemyLevelBonus;
-            const levelEfficiencyBonus = Math.max(0.0, (finalAlchemyLevel - requiredLevel) / 100.0);
-            const totalEfficiency = efficiencyBuff + levelEfficiencyBonus;
-
-            const drinkCosts = this.getDrinkCosts();
-            return { efficiency: totalEfficiency, drinkCosts: drinkCosts, actionSpeed: actionSpeedBuff };
         }
 
-        getDrinkCosts() {
-            const drinkCosts = [];
-            const consumableElements = [...document.querySelectorAll('.ActionTypeConsumableSlots_consumableSlots__kFKk0 .Item_itemContainer__x7kH1')];
-            for (const element of consumableElements) {
+        getBaseAlchemyLevel() {
+            try {
+                const container = document.querySelector('.SkillActionDetail_alchemyComponent__1J55d');
+                const props = utils.getReactProps(container);
+                return props?.characterSkillMap?.get('/skills/alchemy')?.level || 0;
+            } catch (error) {
+                console.error('获取基础炼金等级失败:', error);
+                return 0;
+            }
+        }
+
+        calculateBuffEffects() {
+            try {
+                const container = document.querySelector('.SkillActionDetail_alchemyComponent__1J55d');
+                const props = utils.getReactProps(container);
+                if (!props) return { efficiency: 0.0, alchemyLevelBonus: 0.0, actionSpeed: 0.0 };
+
+                const buffs = props.actionBuffs || [];
+                const baseAlchemyLevel = this.getBaseAlchemyLevel();
+                const requiredLevel = this.getRequiredLevel();
+
+                let efficiencyBuff = 0.0;
+                let alchemyLevelBonus = 0.0;
+                let actionSpeedBuff = 0.0;
+
+                // 计算buff效果
+                for (const buff of buffs) {
+                    if (buff.typeHrid === '/buff_types/efficiency') {
+                        efficiencyBuff += (buff.flatBoost || 0.0);
+                    }
+                    if (buff.typeHrid === '/buff_types/alchemy_level') {
+                        alchemyLevelBonus += (buff.flatBoost || 0.0);
+                    }
+                    if (buff.typeHrid === '/buff_types/action_speed') {
+                        actionSpeedBuff += (buff.flatBoost || 0.0);
+                    }
+                }
+
+                // 计算等级效率加成
+                const finalAlchemyLevel = baseAlchemyLevel + alchemyLevelBonus;
+                const levelEfficiencyBonus = Math.max(0.0, (finalAlchemyLevel - requiredLevel) / 100.0);
+                const totalEfficiency = efficiencyBuff + levelEfficiencyBonus;
+
+                return {
+                    efficiency: totalEfficiency,
+                    alchemyLevelBonus,
+                    actionSpeed: actionSpeedBuff
+                };
+            } catch (error) {
+                console.error('计算buff效果失败:', error);
+                return { efficiency: 0.0, alchemyLevelBonus: 0.0, actionSpeed: 0.0 };
+            }
+        }
+
+        async getDrinkCosts() {
+            try {
+                const drinkCosts = [];
+                const consumableElements = [...document.querySelectorAll('.ActionTypeConsumableSlots_consumableSlots__kFKk0 .Item_itemContainer__x7kH1')];
+
+                for (const element of consumableElements) {
+                    const href = element?.querySelector('svg use')?.getAttribute('href');
+                    const itemHrid = href ? `/items/${href.split('#')[1]}` : null;
+                    if (itemHrid && itemHrid !== '/items/coin') {
+                        drinkCosts.push({ itemHrid });
+                    }
+                }
+
+                return drinkCosts;
+            } catch (error) {
+                console.error('获取饮品成本失败:', error);
+                return [];
+            }
+        }
+
+        async getItemData(element, dropIndex = -1, reqIndex = -1) {
+            try {
                 const href = element?.querySelector('svg use')?.getAttribute('href');
                 const itemHrid = href ? `/items/${href.split('#')[1]}` : null;
-                if (itemHrid && itemHrid !== '/items/coin') {
-                    drinkCosts.push({ itemHrid: itemHrid, asks: 0.0, bids: 0.0 });
+                if (!itemHrid) return null;
+
+                // 获取强化等级
+                let enhancementLevel = 0;
+                if (reqIndex >= 0) {
+                    const enhancementEl = element.querySelector('.Item_enhancementLevel__19g-e');
+                    if (enhancementEl) {
+                        const match = enhancementEl.textContent.match(/\+(\d+)/);
+                        enhancementLevel = match ? parseInt(match[1]) : 0;
+                    }
                 }
+
+                // 获取价格
+                let asks = 0.0, bids = 0.0;
+                if (itemHrid === '/items/coin') {
+                    asks = bids = 1.0;
+                } else {
+                    const orderBooks = await this.getMarketData(itemHrid);
+                    if (orderBooks?.[enhancementLevel]) {
+                        const { asks: asksList, bids: bidsList } = orderBooks[enhancementLevel];
+                        if (reqIndex >= 0) {
+                            asks = asksList?.length > 0 ? asksList[0].price : null;
+                            bids = bidsList?.length > 0 ? bidsList[0].price : null;
+                        } else {
+                            asks = asksList?.[0]?.price || 0.0;
+                            bids = bidsList?.[0]?.price || 0.0;
+                        }
+                    } else {
+                        asks = bids = reqIndex >= 0 ? null : (orderBooks ? -1.0 : 0.0);
+                    }
+                }
+
+                const result = { itemHrid, asks, bids, enhancementLevel };
+
+                // 获取数量和掉落率
+                if (reqIndex >= 0) {
+                    const countEl = document.querySelectorAll('.SkillActionDetail_itemRequirements__3SPnA .SkillActionDetail_inputCount__1rdrn')[reqIndex];
+                    const rawCountText = countEl?.textContent || '1';
+                    result.count = parseFloat(utils.cleanNumber(rawCountText)) || 1.0;
+                } else if (dropIndex >= 0) {
+                    const dropEl = document.querySelectorAll('.SkillActionDetail_drop__26KBZ')[dropIndex];
+                    const text = dropEl?.textContent || '';
+
+                    // 提取数量
+                    const countMatch = text.match(/^([\d\s,.]+)/);
+                    const rawCountText = countMatch?.[1] || '1';
+                    result.count = parseFloat(utils.cleanNumber(rawCountText)) || 1.0;
+
+                    // 提取掉落率
+                    const rateMatch = text.match(/([\d,.]+)%/);
+                    const rawRateText = rateMatch?.[0] || '100';
+                    result.dropRate = parseFloat(utils.cleanNumber(rawRateText)) / 100.0 || 1.0;
+                }
+
+                return result;
+            } catch (error) {
+                console.error('获取物品数据失败:', error);
+                return null;
             }
-            return drinkCosts;
         }
 
-        hasNullPrices(data, useOptimistic) {
-            const checkItems = (items) => items.some(item =>
-                (useOptimistic ? item.bids : item.asks) === null
-            );
-            return checkItems(data.requirements) ||
-                checkItems(data.drops) ||
-                checkItems(data.consumables) ||
-                (useOptimistic ? data.catalyst.bids : data.catalyst.asks) === null;
+        getSuccessRate() {
+            try {
+                const element = document.querySelector('.SkillActionDetail_successRate__2jPEP .SkillActionDetail_value__dQjYH');
+                const rawText = element?.textContent || '0.0';
+                return parseFloat(utils.cleanNumber(rawText)) / 100.0;
+            } catch (error) {
+                console.error('获取成功率失败:', error);
+                return 0.0;
+            }
+        }
+
+        hasNullPrices(data, buyType, sellType) {
+            const checkItems = (items, priceType) => items.some(item => item[priceType] === null);
+
+            return checkItems(data.requirements, buyType === 'ask' ? 'asks' : 'bids') ||
+                checkItems(data.drops, sellType === 'ask' ? 'asks' : 'bids') ||
+                checkItems(data.consumables, buyType === 'ask' ? 'asks' : 'bids') ||
+                data.catalyst[buyType === 'ask' ? 'asks' : 'bids'] === null;
         }
 
         async getActionData() {
-            const getValue = sel => {
-                const element = document.querySelector(sel);
-                const rawText = element?.textContent || '0.0';
-                return parseFloat(utils.cleanNumber(rawText));
-            };
+            try {
+                const successRate = this.getSuccessRate();
+                if (isNaN(successRate) || successRate < 0) return null;
 
-            const successRate = getValue('.SkillActionDetail_successRate__2jPEP .SkillActionDetail_value__dQjYH') / 100.0;
+                const buffEffects = this.calculateBuffEffects();
+                const timeCost = 20.0 / (1.0 + buffEffects.actionSpeed);
 
-            if (isNaN(successRate) || successRate < 0) return null;
+                // 获取页面元素
+                const reqEls = [...document.querySelectorAll('.SkillActionDetail_itemRequirements__3SPnA .Item_itemContainer__x7kH1')];
+                const dropEls = [...document.querySelectorAll('.SkillActionDetail_dropTable__3ViVp .Item_itemContainer__x7kH1')];
+                const consumEls = [...document.querySelectorAll('.ActionTypeConsumableSlots_consumableSlots__kFKk0 .Item_itemContainer__x7kH1')];
+                const catalystEl = document.querySelector('.SkillActionDetail_catalystItemInputContainer__5zmou .ItemSelector_itemContainer__3olqe') ||
+                    document.querySelector('.SkillActionDetail_catalystItemInputContainer__5zmou .SkillActionDetail_itemContainer__2TT5f');
 
-            const efficiencyData = this.calculateEfficiencyAndDrinkCosts();
-            const timeCost = 20.0 / (1.0 + efficiencyData.actionSpeed);
+                // 并行获取所有数据
+                const [requirements, drops, consumables, catalyst, drinkCosts] = await Promise.all([
+                    Promise.all(reqEls.map((el, i) => this.getItemData(el, -1, i))),
+                    Promise.all(dropEls.map((el, i) => this.getItemData(el, i))),
+                    Promise.all(consumEls.map(el => this.getItemData(el))),
+                    catalystEl ? this.getItemData(catalystEl) : Promise.resolve({ asks: 0.0, bids: 0.0 }),
+                    this.getDrinkCosts()
+                ]);
 
-            const reqEls = [...document.querySelectorAll('.SkillActionDetail_itemRequirements__3SPnA .Item_itemContainer__x7kH1')];
-            const dropEls = [...document.querySelectorAll('.SkillActionDetail_dropTable__3ViVp .Item_itemContainer__x7kH1')];
-            const consumEls = [...document.querySelectorAll('.ActionTypeConsumableSlots_consumableSlots__kFKk0 .Item_itemContainer__x7kH1')];
-            const catalystEl = document.querySelector('.SkillActionDetail_catalystItemInputContainer__5zmou .ItemSelector_itemContainer__3olqe') ||
-                document.querySelector('.SkillActionDetail_catalystItemInputContainer__5zmou .SkillActionDetail_itemContainer__2TT5f');
-
-            const [requirements, drops, consumables, catalyst] = await Promise.all([
-                Promise.all(reqEls.map((el, i) => this.getItemData(el, -1, i))),
-                Promise.all(dropEls.map((el, i) => this.getItemData(el, i))),
-                Promise.all(consumEls.map(el => this.getItemData(el))),
-                catalystEl ? this.getItemData(catalystEl) : Promise.resolve({ asks: 0.0, bids: 0.0 })
-            ]);
-
-            return {
-                successRate,
-                timeCost,
-                efficiency: efficiencyData.efficiency,
-                requirements: requirements.filter(Boolean),
-                drops: drops.filter(Boolean),
-                catalyst: catalyst || { asks: 0.0, bids: 0.0 },
-                consumables: consumables.filter(Boolean),
-                drinkCosts: efficiencyData.drinkCosts
-            };
+                return {
+                    successRate,
+                    timeCost,
+                    efficiency: buffEffects.efficiency,
+                    requirements: requirements.filter(Boolean),
+                    drops: drops.filter(Boolean),
+                    catalyst: catalyst || { asks: 0.0, bids: 0.0 },
+                    consumables: consumables.filter(Boolean),
+                    drinkCosts
+                };
+            } catch (error) {
+                console.error('获取行动数据失败:', error);
+                return null;
+            }
         }
 
-        calculateProfit(data, useOptimistic) {
-            if (this.hasNullPrices(data, useOptimistic)) return null;
+        calculateProfit(data, buyType, sellType) {
+            try {
+                if (this.hasNullPrices(data, buyType, sellType)) return null;
 
-            const totalReqCost = data.requirements.reduce((sum, item) => {
-                const price = useOptimistic ? item.bids : item.asks;
-                return sum + (price * item.count);
-            }, 0.0);
-
-            const catalystPrice = useOptimistic ? data.catalyst.bids : data.catalyst.asks;
-            const costPerAttempt = (totalReqCost * (1.0 - data.successRate)) + ((totalReqCost + catalystPrice) * data.successRate);
-
-            const incomePerAttempt = data.drops.reduce((sum, drop, index) => {
-                const price = useOptimistic ? drop.asks : drop.bids;
-                let income;
-
-                const isLastTwoDrops = index >= data.drops.length - 2;
-                if (isLastTwoDrops) {
-                    income = price * drop.dropRate * drop.count;
-                } else {
-                    income = price * drop.dropRate * drop.count * data.successRate;
-                }
-
-                if (drop.itemHrid !== '/items/coin') {
-                    income *= 0.98;
-                }
-                return sum + income;
-            }, 0.0);
-
-            const netProfitPerAttempt = incomePerAttempt - costPerAttempt;
-            const profitPerSecond = (netProfitPerAttempt * (1.0 + data.efficiency)) / data.timeCost;
-
-            let drinkCostPerSecond = 0.0;
-            if (data.drinkCosts && data.drinkCosts.length > 0) {
-                const totalDrinkCost = data.drinkCosts.reduce((sum, drinkInfo) => {
-                    const consumableData = data.consumables.find(c => c.itemHrid === drinkInfo.itemHrid);
-                    if (consumableData) {
-                        const price = useOptimistic ? consumableData.bids : consumableData.asks;
-                        return sum + price;
-                    }
-                    return sum;
+                // 计算材料成本 - 使用指定的买入价格类型
+                const totalReqCost = data.requirements.reduce((sum, item) => {
+                    const price = buyType === 'ask' ? item.asks : item.bids;
+                    return sum + (price * item.count);
                 }, 0.0);
-                drinkCostPerSecond = totalDrinkCost / 300.0;
+
+                // 计算每次尝试的成本
+                const catalystPrice = buyType === 'ask' ? data.catalyst.asks : data.catalyst.bids;
+                const costPerAttempt = (totalReqCost * (1.0 - data.successRate)) +
+                    ((totalReqCost + catalystPrice) * data.successRate);
+
+                // 计算每次尝试的收入 - 使用指定的卖出价格类型
+                const incomePerAttempt = data.drops.reduce((sum, drop, index) => {
+                    const price = sellType === 'ask' ? drop.asks : drop.bids;
+                    let income;
+
+                    // 判断是否为最后两个掉落物（精华和稀有）
+                    const isLastTwoDrops = index >= data.drops.length - 2;
+                    if (isLastTwoDrops) {
+                        income = price * drop.dropRate * drop.count;
+                    } else {
+                        income = price * drop.dropRate * drop.count * data.successRate;
+                    }
+
+                    // 应用市场税费
+                    if (drop.itemHrid !== '/items/coin') {
+                        income *= 0.98;
+                    }
+                    return sum + income;
+                }, 0.0);
+
+                // 计算利润
+                const netProfitPerAttempt = incomePerAttempt - costPerAttempt;
+                const profitPerSecond = (netProfitPerAttempt * (1.0 + data.efficiency)) / data.timeCost;
+
+                // 计算饮品成本
+                let drinkCostPerSecond = 0.0;
+                if (data.drinkCosts?.length > 0) {
+                    const totalDrinkCost = data.drinkCosts.reduce((sum, drinkInfo) => {
+                        const consumableData = data.consumables.find(c => c.itemHrid === drinkInfo.itemHrid);
+                        if (consumableData) {
+                            const price = buyType === 'ask' ? consumableData.asks : consumableData.bids;
+                            return sum + price;
+                        }
+                        return sum;
+                    }, 0.0);
+                    drinkCostPerSecond = totalDrinkCost / 300.0; // 5分钟
+                }
+
+                const finalProfitPerSecond = profitPerSecond - drinkCostPerSecond;
+                const dailyProfit = finalProfitPerSecond * 86400.0;
+
+                return dailyProfit;
+            } catch (error) {
+                console.error('计算利润失败:', error);
+                return null;
             }
+        }
 
-            const finalProfitPerSecond = profitPerSecond - drinkCostPerSecond;
-            const dailyProfit = finalProfitPerSecond * 86400.0;
+        async updateProfitDisplay() {
+            try {
+                const container = document.getElementById('alchemy-profit-display');
+                if (!container) return;
 
-            return dailyProfit;
+                const data = await this.getActionData();
+                if (!data) {
+                    this.setAllProfitsToError();
+                    return;
+                }
+
+                // 4种利润计算情况，按指定顺序排列
+                const profitTypes = [
+                    { id: 'ask-buy-bid-sell', buyType: 'ask', sellType: 'bid' },
+                    { id: 'bid-buy-bid-sell', buyType: 'bid', sellType: 'bid' },
+                    { id: 'ask-buy-ask-sell', buyType: 'ask', sellType: 'ask' },
+                    { id: 'bid-buy-ask-sell', buyType: 'bid', sellType: 'ask' }
+                ];
+
+                profitTypes.forEach(type => {
+                    const profit = this.calculateProfit(data, type.buyType, type.sellType);
+                    const element = document.getElementById(type.id);
+                    if (element) {
+                        if (profit === null) {
+                            element.textContent = LANG.noMarketData;
+                            element.style.color = CONFIG.COLORS.neutral;
+                        } else {
+                            element.textContent = utils.formatProfit(profit);
+                            element.style.color = profit >= 0 ? CONFIG.COLORS.profit : CONFIG.COLORS.loss;
+                        }
+                    }
+                });
+            } catch (error) {
+                console.error('更新利润显示失败:', error);
+                this.setAllProfitsToError();
+            }
+        }
+
+        setAllProfitsToError() {
+            const profitIds = ['ask-buy-bid-sell', 'bid-buy-bid-sell', 'ask-buy-ask-sell', 'bid-buy-ask-sell'];
+            profitIds.forEach(id => {
+                const element = document.getElementById(id);
+                if (element) {
+                    element.textContent = LANG.calculationError;
+                    element.style.color = CONFIG.COLORS.error;
+                }
+            });
         }
 
         getStateFingerprint() {
-            const consumables = document.querySelectorAll('.ActionTypeConsumableSlots_consumableSlots__kFKk0 .Item_itemContainer__x7kH1');
-            const successRate = document.querySelector('.SkillActionDetail_successRate__2jPEP .SkillActionDetail_value__dQjYH')?.textContent || '';
-            const catalyst = document.querySelector('.SkillActionDetail_catalystItemInputContainer__5zmou .Item_itemContainer__x7kH1')?.querySelector('svg use')?.getAttribute('href') || 'none';
+            try {
+                const consumables = document.querySelectorAll('.ActionTypeConsumableSlots_consumableSlots__kFKk0 .Item_itemContainer__x7kH1');
+                const successRate = document.querySelector('.SkillActionDetail_successRate__2jPEP .SkillActionDetail_value__dQjYH')?.textContent || '';
+                const catalyst = document.querySelector('.SkillActionDetail_catalystItemInputContainer__5zmou .Item_itemContainer__x7kH1')?.querySelector('svg use')?.getAttribute('href') || 'none';
+                const reqItem = document.querySelector('.Item_large__3iKw6')?.querySelector('svg use')?.getAttribute('href') || 'none';
 
-            const consumablesState = Array.from(consumables).map(el =>
-                el.querySelector('svg use')?.getAttribute('href') || 'empty').join('|');
+                const consumablesState = Array.from(consumables).map(el =>
+                    el.querySelector('svg use')?.getAttribute('href') || 'empty'
+                ).join('|');
 
-            return `${consumablesState}:${successRate}:${catalyst}`;
-        }
-
-        setupUI() {
-            // 这个方法被 setupAlchemyUI 替代，保留以兼容基类
-            this.setupAlchemyUI();
+                return `${consumablesState}:${successRate}:${catalyst}:${reqItem}`;
+            } catch (error) {
+                console.error('获取状态指纹失败:', error);
+                return '';
+            }
         }
     }
 
@@ -1764,10 +2604,72 @@
             });
         }
 
+        createProfitDisplay() {
+            const container = document.createElement('div');
+            container.id = 'universal-action-profit-display';
+            container.style.cssText = `
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            font-family: Roboto, Helvetica, Arial, sans-serif;
+            font-size: 14px;
+            line-height: 20px;
+            letter-spacing: 0.00938em;
+            color: var(--color-text-dark-mode);
+            font-weight: 400;
+            margin-top: 8px;
+        `;
+
+            // 创建垂直布局
+            const grid = document.createElement('div');
+            grid.style.cssText = `
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        `;
+
+            // 4种利润计算情况，按指定顺序排列
+            const profitTypes = [
+                { id: 'universal-ask-buy-bid-sell', label: LANG.askBuyBidSell, buyType: 'ask', sellType: 'bid' },
+                { id: 'universal-bid-buy-bid-sell', label: LANG.bidBuyBidSell, buyType: 'bid', sellType: 'bid' },
+                { id: 'universal-ask-buy-ask-sell', label: LANG.askBuyAskSell, buyType: 'ask', sellType: 'ask' },
+                { id: 'universal-bid-buy-ask-sell', label: LANG.bidBuyAskSell, buyType: 'bid', sellType: 'ask' }
+            ];
+
+            profitTypes.forEach(type => {
+                const profitBox = document.createElement('div');
+                profitBox.style.cssText = `
+                display: flex;
+                align-items: center;
+                gap: 8px;
+            `;
+
+                const label = document.createElement('span');
+                label.textContent = type.label;
+                label.style.cssText = `
+                color: var(--color-space-300);
+                font-size: 14px;
+            `;
+
+                const value = document.createElement('span');
+                value.id = type.id;
+                value.textContent = this.getWaitingText();
+                value.style.cssText = `
+                font-weight: 500;
+                font-size: 14px;
+            `;
+
+                profitBox.appendChild(label);
+                profitBox.appendChild(value);
+                grid.appendChild(profitBox);
+            });
+
+            container.appendChild(grid);
+            return container;
+        }
+
         getContainerId() { return 'universal-action-profit-display'; }
-        getPessimisticId() { return 'action-pessimistic-profit'; }
-        getOptimisticId() { return 'action-optimistic-profit'; }
-        getWaitingText() { return LANG.waitingAPIUniversal; }
+        getWaitingText() { return LANG.loadingMarketData; }
 
         getCurrentActionType() {
             try {
@@ -1973,17 +2875,16 @@
             return null;
         }
 
-        hasNullPrices(data, useOptimistic) {
-            const checkItems = (items) => items.some(item =>
-                (useOptimistic ? item.bids : item.asks) === null ||
-                (useOptimistic ? item.bids : item.asks) <= 0.0
-            );
-            const checkDrinks = (drinks) => drinks.some(drink =>
-                (useOptimistic ? drink.bids : drink.asks) === null ||
-                (useOptimistic ? drink.bids : drink.asks) <= 0.0
-            );
-            return checkItems(data.requirements) || checkItems(data.outputs) ||
-                checkItems(data.upgrades || []) || checkDrinks(data.drinkCosts || []);
+        hasNullPrices(data, buyType, sellType) {
+            const checkRequirements = (items, priceType) => items.some(item => item[priceType] === null || item[priceType] <= 0.0);
+            const checkOutputs = (items, priceType) => items.some(item => item[priceType] === null || item[priceType] <= 0.0);
+            const checkUpgrades = (items, priceType) => items.some(item => item[priceType] === null || item[priceType] <= 0.0);
+            const checkDrinks = (drinks, priceType) => drinks.some(drink => drink[priceType] === null || drink[priceType] <= 0.0);
+
+            return checkRequirements(data.requirements, buyType === 'ask' ? 'asks' : 'bids') ||
+                checkOutputs(data.outputs, sellType === 'ask' ? 'asks' : 'bids') ||
+                checkUpgrades(data.upgrades || [], buyType === 'ask' ? 'asks' : 'bids') ||
+                checkDrinks(data.drinkCosts || [], buyType === 'ask' ? 'asks' : 'bids');
         }
 
         async getActionData() {
@@ -2016,42 +2917,44 @@
             };
         }
 
-        calculateProfit(data, useOptimistic) {
-            if (this.hasNullPrices(data, useOptimistic)) return null;
+        calculateProfit(data, buyType, sellType) {
+            if (this.hasNullPrices(data, buyType, sellType)) return null;
             if (data.actionTime <= 0.0) return null;
 
+            // 计算成本 - 使用指定的买入价格类型
             let totalCost = 0.0;
             data.requirements.forEach(item => {
-                const price = useOptimistic ? item.bids : item.asks;
+                const price = buyType === 'ask' ? item.asks : item.bids;
                 totalCost += price * item.count;
             });
 
             if (data.upgrades.length > 0) {
                 data.upgrades.forEach(item => {
-                    const price = useOptimistic ? item.bids : item.asks;
+                    const price = buyType === 'ask' ? item.asks : item.bids;
                     totalCost += price * item.count;
                 });
             }
 
             const effectiveTime = data.actionTime / (1.0 + data.efficiency);
 
+            // 计算收入 - 使用指定的卖出价格类型
             let totalIncome = 0.0;
             data.outputs.forEach(item => {
-                const price = useOptimistic ? item.asks : item.bids;
+                const price = sellType === 'ask' ? item.asks : item.bids;
                 let income = price * item.count;
                 if (item.itemHrid !== '/items/coin') {
-                    income *= 0.98;
+                    income *= 0.98; // 市场税费
                 }
                 totalIncome += income;
             });
 
             if (data.drops.length > 0) {
                 data.drops.forEach(item => {
-                    const price = useOptimistic ? item.asks : item.bids;
+                    const price = sellType === 'ask' ? item.asks : item.bids;
                     const dropRate = this.parseDropRate(item.itemHrid) || 0.05;
                     let income = price * (item.count || 1.0) * dropRate;
                     if (item.itemHrid !== '/items/coin') {
-                        income *= 0.98;
+                        income *= 0.98; // 市场税费
                     }
                     totalIncome += income;
                 });
@@ -2060,19 +2963,69 @@
             const profitPerAction = totalIncome - totalCost;
             const profitPerSecond = (profitPerAction * (1.0 + data.efficiency)) / data.actionTime;
 
+            // 计算饮品成本
             let drinkCostPerSecond = 0.0;
             if (data.drinkCosts.length > 0) {
                 const totalDrinkCost = data.drinkCosts.reduce((sum, item) => {
-                    const price = useOptimistic ? item.bids : item.asks;
+                    const price = buyType === 'ask' ? item.asks : item.bids;
                     return sum + price;
                 }, 0.0);
-                drinkCostPerSecond = totalDrinkCost / 300.0;
+                drinkCostPerSecond = totalDrinkCost / 300.0; // 5分钟
             }
 
             const finalProfitPerSecond = profitPerSecond - drinkCostPerSecond;
             const dailyProfit = finalProfitPerSecond * 86400.0;
 
             return dailyProfit;
+        }
+
+        async updateProfitDisplay() {
+            try {
+                const container = document.getElementById('universal-action-profit-display');
+                if (!container) return;
+
+                const data = await this.getActionData();
+                if (!data) {
+                    this.setAllProfitsToError();
+                    return;
+                }
+
+                // 4种利润计算情况，按指定顺序排列
+                const profitTypes = [
+                    { id: 'universal-ask-buy-bid-sell', buyType: 'ask', sellType: 'bid' },
+                    { id: 'universal-bid-buy-bid-sell', buyType: 'bid', sellType: 'bid' },
+                    { id: 'universal-ask-buy-ask-sell', buyType: 'ask', sellType: 'ask' },
+                    { id: 'universal-bid-buy-ask-sell', buyType: 'bid', sellType: 'ask' }
+                ];
+
+                profitTypes.forEach(type => {
+                    const profit = this.calculateProfit(data, type.buyType, type.sellType);
+                    const element = document.getElementById(type.id);
+                    if (element) {
+                        if (profit === null) {
+                            element.textContent = LANG.noMarketData;
+                            element.style.color = CONFIG.COLORS.neutral;
+                        } else {
+                            element.textContent = utils.formatProfit(profit);
+                            element.style.color = profit >= 0 ? CONFIG.COLORS.profit : CONFIG.COLORS.loss;
+                        }
+                    }
+                });
+            } catch (error) {
+                console.error('更新利润显示失败:', error);
+                this.setAllProfitsToError();
+            }
+        }
+
+        setAllProfitsToError() {
+            const profitIds = ['universal-ask-buy-bid-sell', 'universal-bid-buy-bid-sell', 'universal-ask-buy-ask-sell', 'universal-bid-buy-ask-sell'];
+            profitIds.forEach(id => {
+                const element = document.getElementById(id);
+                if (element) {
+                    element.textContent = LANG.calculationError;
+                    element.style.color = CONFIG.COLORS.error;
+                }
+            });
         }
 
         getStateFingerprint() {
@@ -2120,6 +3073,14 @@
                 setTimeout(() => this.updateProfitDisplay(), 100);
             } else if (!shouldShow && existingDisplay) {
                 existingDisplay.remove();
+            }
+        }
+
+        checkForUpdates() {
+            const currentState = this.getStateFingerprint();
+            if (currentState !== this.lastState) {
+                this.lastState = currentState;
+                this.debounceUpdate(() => this.updateProfitDisplay());
             }
         }
     }
@@ -3367,7 +4328,7 @@
 
         setupWebSocketHooks() {
             const waitForAPI = () => {
-                if (window.AutoBuyAPI?.hookMessage) {
+                if (window.PGE?.hookMessage) {
                     this.initHooks();
                 } else {
                     setTimeout(waitForAPI, 1000);
@@ -3378,8 +4339,8 @@
 
         initHooks() {
             try {
-                window.AutoBuyAPI.hookMessage('new_character_action', (data) => this.handleNewAction(data));
-                window.AutoBuyAPI.hookMessage('actions_updated', (data) => this.handleActionsUpdated(data));
+                window.PGE.hookMessage('new_character_action', (data) => this.handleNewAction(data));
+                window.PGE.hookMessage('actions_updated', (data) => this.handleActionsUpdated(data));
             } catch (error) {
                 console.error('[AutoStop] 设置WebSocket监听失败:', error);
             }
@@ -3447,7 +4408,7 @@
 
         stopAction(actionId) {
             try {
-                window.AutoBuyAPI?.core?.handleCancelCharacterAction?.(actionId);
+                window.PGE?.core?.handleCancelCharacterAction?.(actionId);
             } catch (error) {
                 console.error('[AutoStop] 取消动作失败:', error);
             }
@@ -4059,7 +5020,17 @@
                 const materialName = nameElement.textContent.trim();
                 const itemId = utils.extractItemId(svgElement);
                 const currentStock = utils.getCountById(itemId);
-                const consumptionPerUnit = parseFloat(utils.cleanNumber(inputCounts[i]?.textContent || '0'));
+
+                let consumptionPerUnit;
+
+                // 根据配置决定是否考虑工匠茶影响
+                if (window.PGE_CONFIG.considerArtisanTea) {
+                    // 考虑工匠茶影响：使用显示的消耗量（已经包含了buff效果）
+                    consumptionPerUnit = parseFloat(utils.cleanNumber(inputCounts[i]?.textContent || '0'));
+                } else {
+                    // 不考虑工匠茶影响：使用基础消耗量
+                    consumptionPerUnit = this.getBaseMaterialConsumption(materialContainer, i);
+                }
 
                 const totalNeeded = type === 'house' ? consumptionPerUnit : Math.ceil(executionCount * consumptionPerUnit);
                 const supplementNeeded = Math.max(0, totalNeeded - currentStock);
@@ -4068,6 +5039,23 @@
                     materialName, itemId, supplementNeeded, totalNeeded, currentStock, index: i, type: 'material'
                 });
             });
+        }
+
+        //获取基础材料消耗量（不考虑工匠茶等buff影响）
+        static getBaseMaterialConsumption(materialContainer, index) {
+            try {
+                // 尝试从React props中获取基础消耗量
+                const reactKey = Object.keys(materialContainer).find(key => key.startsWith('__reactProps$'));
+                if (reactKey) {
+                    const props = materialContainer[reactKey];
+                    const baseCount = props?.children?._owner?.memoizedProps?.count;
+                    if (typeof baseCount === 'number') {
+                        return baseCount;
+                    }
+                }
+            } catch (error) {
+                console.error('获取基础材料消耗量失败:', error);
+            }
         }
 
         static calculateUpgradeRequirements(container, selectors, executionCount, requirements) {
@@ -4144,7 +5132,7 @@
     // ==================== 游戏核心监控 ====================
     function setupGameCoreMonitor() {
         const interval = setInterval(() => {
-            if (window.AutoBuyAPI.core || initGameCore()) {
+            if (window.PGE.core || initGameCore()) {
                 clearInterval(interval);
             }
         }, 2000);
@@ -4155,28 +5143,32 @@
         // 初始化基础模块（总是启用）
         window.MWIModules.eventBus = new EventBus();
         window.MWIModules.toast = new Toast();
-        window.MWIModules.api = new AutoBuyAPI();
+        window.MWIModules.api = new PGE();
 
         // 根据配置初始化功能模块
-        if (MWI_CONFIG.characterSwitcher) {
+        if (PGE_CONFIG.characterSwitcher) {
             window.MWIModules.characterSwitcher = new CharacterSwitcher();
         }
 
-        if (MWI_CONFIG.gatheringEnhanced) {
+        if (PGE_CONFIG.gatheringEnhanced) {
             window.MWIModules.autoStop = new AutoStopManager();
         }
 
-        if (MWI_CONFIG.quickPurchase) {
+        if (PGE_CONFIG.quickPurchase) {
             window.MWIModules.shoppingCart = new ShoppingCartManager();
             window.MWIModules.materialPurchase = new MaterialPurchaseManager();
         }
 
-        if (MWI_CONFIG.alchemyProfit) {
+        if (PGE_CONFIG.alchemyProfit) {
             window.MWIModules.alchemyCalculator = new AlchemyProfitCalculator();
         }
 
-        if (MWI_CONFIG.universalProfit) {
+        if (PGE_CONFIG.universalProfit) {
             window.MWIModules.universalCalculator = new UniversalActionProfitCalculator();
+        }
+
+        if (PGE_CONFIG.autoClaimMarketListings) {
+            window.MWIModules.autoClaimMarketListings = new AutoClaimMarketListingsManager();
         }
 
         // 添加全局样式（总是启用）
@@ -4184,6 +5176,16 @@
 
         // 设置游戏核心监控（总是启用）
         setupGameCoreMonitor();
+
+        // 在DOM加载完成后或立即初始化
+        initSettingsTabManager();
+        // if (document.readyState === 'loading') {
+        //     document.addEventListener('DOMContentLoaded', initSettingsTabManager);
+        // } else {
+        //     initSettingsTabManager();
+        // }
+        // 导出到全局作用域，以便其他地方调用
+        // window.initSettingsTabManager = initSettingsTabManager;
     }
 
     // ==================== 初始化状态 ====================
