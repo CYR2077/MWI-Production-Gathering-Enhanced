@@ -54,7 +54,6 @@
     window.MWIModules = {
         toast: null,
         api: null,
-        eventBus: null,
         autoStop: null,
         alchemyCalculator: null,
         universalCalculator: null,
@@ -63,32 +62,6 @@
         materialPurchase: null,
         autoClaimMarketListings: null,
     };
-
-    // ==================== 事件总线 ====================
-    class EventBus {
-        constructor() {
-            this.events = {};
-        }
-
-        on(event, callback) {
-            if (!this.events[event]) {
-                this.events[event] = [];
-            }
-            this.events[event].push(callback);
-        }
-
-        emit(event, data) {
-            if (this.events[event]) {
-                this.events[event].forEach(callback => callback(data));
-            }
-        }
-
-        off(event, callback) {
-            if (this.events[event]) {
-                this.events[event] = this.events[event].filter(cb => cb !== callback);
-            }
-        }
-    }
 
     // ==================== 常量配置 ====================
     const CONFIG = {
@@ -5136,8 +5109,7 @@
 
     // ==================== 模块初始化 ====================
     function initializeModules() {
-        // 初始化基础模块（总是启用）
-        window.MWIModules.eventBus = new EventBus();
+        // 初始化基础模块
         window.MWIModules.toast = new Toast();
         window.MWIModules.api = new PGE();
 
