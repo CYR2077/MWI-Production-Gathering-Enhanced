@@ -1165,13 +1165,9 @@
             button.setAttribute('role', 'tab');
             button.setAttribute('aria-selected', 'false');
 
-            // 获取当前语言
-            const isZh = (navigator.language || 'en').toLowerCase().includes('zh');
-            const tabName = isZh ? tabData.name : tabData.nameEn;
-
             button.innerHTML = `
         <span class="MuiBadge-root TabsComponent_badge__1Du26 css-1rzb3uu">
-            ${tabName}
+            ${LANG.settings.tabName}
             <span class="MuiBadge-badge MuiBadge-standard MuiBadge-invisible MuiBadge-anchorOriginTopRight MuiBadge-anchorOriginTopRightRectangular MuiBadge-overlapRectangular css-vwo4eg"></span>
         </span>
         <span class="MuiTouchRipple-root css-w0pj6f"></span>

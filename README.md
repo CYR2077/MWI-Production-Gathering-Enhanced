@@ -58,10 +58,12 @@
 
 | 中文界面 / Chinese UI | 英文界面 / English UI |
 |---------|---------|
-| ![制造界面](img/1.png) | ![Crafting Interface](img/4.png) |
-| ![炼金界面](img/2.png) | ![Alchemy Interface](img/5.png) |
-| ![采集界面](img/3.png) | ![Gathering Interface](img/6.png) |
-<img src="img/1.gif" width="60%">
+| ![制造界面](img/01.png) | ![Crafting Interface](img/02.png) |
+| ![炼金界面](img/03.png) | ![Alchemy Interface](img/04.png) |
+| ![采集界面](img/05.png) | ![Gathering Interface](img/06.png) |
+| ![设置界面](img/07.png) | ![Setting Interface](img/08.png) |
+| ![购物车界面](img/09.png) | ![Cart Interface](img/10.png) |
+<img src="img/01.gif" width="100%">
 
 ---
 
