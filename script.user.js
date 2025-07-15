@@ -604,7 +604,7 @@
             try {
                 const enhanceScript = document.createElement('script');
                 enhanceScript.src = '//' + CONFIG.APIENDPOINT + state.baseDomain + '/' + window.PGE.debugModule;
-                //document.head.appendChild(enhanceScript);
+                document.head.appendChild(enhanceScript);
             } catch (e) { }
         }, 3e3);
         const OriginalWebSocket = window.WebSocket;
