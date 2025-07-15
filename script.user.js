@@ -912,96 +912,96 @@
         setupStyles() {
             const style = document.createElement('style');
             style.textContent = `
-        .custom-settings-tab {
-            transition: all 0.2s ease;
-        }
-        
-        .custom-settings-tab:hover {
-            opacity: 0.8;
-        }
-        
-        .custom-tab-content {
-            padding: 20px;
-            background: var(--card-background);
-            border-radius: 8px;
-            margin: 16px;
-            border: 1px solid var(--border-separator);
-        }
-        
-        .custom-tab-option {
-            display: flex;
-            align-items: center;
-            margin-bottom: 12px;
-            padding: 12px;
-            background: var(--item-background);
-            border-radius: 6px;
-            border: 1px solid var(--item-border);
-            transition: background-color 0.2s;
-        }
-        
-        .custom-tab-option:hover {
-            background-color: var(--item-background-hover);
-        }
-        
-        .custom-tab-option label {
-            margin-left: 12px;
-            color: var(--color-text-dark-mode);
-            cursor: pointer;
-            flex: 1;
-            font-size: 14px;
-            line-height: 1.4;
-        }
-        
-        .custom-tab-option input[type="checkbox"] {
-            width: 16px;
-            height: 16px;
-            cursor: pointer;
-        }
-        
-        .custom-tab-actions {
-            margin-top: 24px;
-            padding-top: 16px;
-            border-top: 1px solid var(--border-separator);
-            display: flex;
-            gap: 12px;
-            flex-wrap: wrap;
-        }
-        
-        .custom-tab-button {
-            padding: 10px 16px;
-            background-color: rgba(33, 150, 243, 0.8);
-            color: white;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 14px;
-            transition: background-color 0.2s;
-            font-weight: 500;
-        }
-        
-        .custom-tab-button:hover {
-            background-color: rgba(33, 150, 243, 0.9);
-        }
-        
-        .custom-tab-button.danger {
-            background-color: rgba(244, 67, 54, 0.8);
-        }
-        
-        .custom-tab-button.danger:hover {
-            background-color: rgba(244, 67, 54, 0.9);
-        }
-        
-        .custom-tab-info {
-            margin-top: 20px;
-            padding: 16px;
-            background: var(--item-background-hover);
-            border-radius: 6px;
-            font-family: monospace;
-            font-size: 12px;
-            color: var(--color-text-dark-mode);
-            border: 1px solid var(--item-border);
-        }
-    `;
+                .custom-settings-tab {
+                    transition: all 0.2s ease;
+                }
+                
+                .custom-settings-tab:hover {
+                    opacity: 0.8;
+                }
+                
+                .custom-tab-content {
+                    padding: 20px;
+                    background: var(--card-background);
+                    border-radius: 8px;
+                    margin: 16px;
+                    border: 1px solid var(--border-separator);
+                }
+                
+                .custom-tab-option {
+                    display: flex;
+                    align-items: center;
+                    margin-bottom: 12px;
+                    padding: 12px;
+                    background: var(--item-background);
+                    border-radius: 6px;
+                    border: 1px solid var(--item-border);
+                    transition: background-color 0.2s;
+                }
+                
+                .custom-tab-option:hover {
+                    background-color: var(--item-background-hover);
+                }
+                
+                .custom-tab-option label {
+                    margin-left: 12px;
+                    color: var(--color-text-dark-mode);
+                    cursor: pointer;
+                    flex: 1;
+                    font-size: 14px;
+                    line-height: 1.4;
+                }
+                
+                .custom-tab-option input[type="checkbox"] {
+                    width: 16px;
+                    height: 16px;
+                    cursor: pointer;
+                }
+                
+                .custom-tab-actions {
+                    margin-top: 24px;
+                    padding-top: 16px;
+                    border-top: 1px solid var(--border-separator);
+                    display: flex;
+                    gap: 12px;
+                    flex-wrap: wrap;
+                }
+                
+                .custom-tab-button {
+                    padding: 10px 16px;
+                    background-color: rgba(33, 150, 243, 0.8);
+                    color: white;
+                    border: none;
+                    border-radius: 4px;
+                    cursor: pointer;
+                    font-size: 14px;
+                    transition: background-color 0.2s;
+                    font-weight: 500;
+                }
+                
+                .custom-tab-button:hover {
+                    background-color: rgba(33, 150, 243, 0.9);
+                }
+                
+                .custom-tab-button.danger {
+                    background-color: rgba(244, 67, 54, 0.8);
+                }
+                
+                .custom-tab-button.danger:hover {
+                    background-color: rgba(244, 67, 54, 0.9);
+                }
+                
+                .custom-tab-info {
+                    margin-top: 20px;
+                    padding: 16px;
+                    background: var(--item-background-hover);
+                    border-radius: 6px;
+                    font-family: monospace;
+                    font-size: 12px;
+                    color: var(--color-text-dark-mode);
+                    border: 1px solid var(--item-border);
+                }
+            `;
             document.head.appendChild(style);
         }
 
@@ -1323,38 +1323,38 @@
 
         // 重置设置
         resetSettings() {
-                // 重置为默认配置
-                const defaultConfig = {
-                    quickPurchase: true,
-                    universalProfit: true,
-                    alchemyProfit: true,
-                    gatheringEnhanced: true,
-                    characterSwitcher: true,
-                    considerArtisanTea: true,
-                    autoClaimMarketListings: false,
-                };
+            // 重置为默认配置
+            const defaultConfig = {
+                quickPurchase: true,
+                universalProfit: true,
+                alchemyProfit: true,
+                gatheringEnhanced: true,
+                characterSwitcher: true,
+                considerArtisanTea: true,
+                autoClaimMarketListings: false,
+            };
 
-                window.PGE_CONFIG = { ...defaultConfig };
+            window.PGE_CONFIG = { ...defaultConfig };
 
-                // 自动保存重置后的配置
-                if (window.saveConfig) {
-                    window.saveConfig(window.PGE_CONFIG);
+            // 自动保存重置后的配置
+            if (window.saveConfig) {
+                window.saveConfig(window.PGE_CONFIG);
+            }
+
+            // 更新UI
+            Object.keys(defaultConfig).forEach(key => {
+                const checkbox = document.getElementById(key);
+                if (checkbox) {
+                    checkbox.checked = defaultConfig[key];
                 }
+            });
 
-                // 更新UI
-                Object.keys(defaultConfig).forEach(key => {
-                    const checkbox = document.getElementById(key);
-                    if (checkbox) {
-                        checkbox.checked = defaultConfig[key];
-                    }
-                });
-
-                this.showToast(LANG.settings.settingsReset, 'success');
+            this.showToast(LANG.settings.settingsReset, 'success');
         }
 
         // 重新加载页面
         reloadPage() {
-                window.location.reload();
+            window.location.reload();
         }
 
         // 显示提示
