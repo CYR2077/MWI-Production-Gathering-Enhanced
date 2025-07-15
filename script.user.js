@@ -2534,15 +2534,12 @@
         }
 
         hasNullPrices(data, buyType, sellType) {
-            const checkItems = (items, priceType) => items.some(item =>
-                item[priceType] === null || item[priceType] <= 0.0
-            );
+            const checkItems = (items, priceType) => items.some(item => item[priceType] === null);
 
             return checkItems(data.requirements, buyType === 'ask' ? 'asks' : 'bids') ||
                 checkItems(data.drops, sellType === 'ask' ? 'asks' : 'bids') ||
                 checkItems(data.consumables, buyType === 'ask' ? 'asks' : 'bids') ||
-                data.catalyst[buyType === 'ask' ? 'asks' : 'bids'] === null ||
-                data.catalyst[buyType === 'ask' ? 'asks' : 'bids'] <= 0.0;
+                data.catalyst[buyType === 'ask' ? 'asks' : 'bids'] === null;
         }
 
         async getActionData() {
@@ -2702,13 +2699,21 @@
                 const consumables = document.querySelectorAll('.ActionTypeConsumableSlots_consumableSlots__kFKk0 .Item_itemContainer__x7kH1');
                 const successRate = document.querySelector('.SkillActionDetail_successRate__2jPEP .SkillActionDetail_value__dQjYH')?.textContent || '';
                 const catalyst = document.querySelector('.SkillActionDetail_catalystItemInputContainer__5zmou .Item_itemContainer__x7kH1')?.querySelector('svg use')?.getAttribute('href') || 'none';
-                const reqItem = document.querySelector('.Item_large__3iKw6')?.querySelector('svg use')?.getAttribute('href') || 'none';
+                const reqItems = document.querySelectorAll('.SkillActionDetail_itemRequirements__3SPnA .Item_itemContainer__x7kH1');
+                const enhancements = document.querySelectorAll('.SkillActionDetail_itemRequirements__3SPnA .Item_enhancementLevel__19g-e') || [];
 
                 const consumablesState = Array.from(consumables).map(el =>
                     el.querySelector('svg use')?.getAttribute('href') || 'empty'
                 ).join('|');
 
-                return `${consumablesState}:${successRate}:${catalyst}:${reqItem}`;
+                const reqItemsState = Array.from(reqItems).map(el =>
+                    el.querySelector('svg use')?.getAttribute('href') || 'empty'
+                ).join('|');
+
+                const enhancementsState = Array.from(enhancements).map(el =>
+                    el.textContent.trim()).join('|');
+
+                return `${consumablesState}:${successRate}:${catalyst}:${reqItemsState}:${enhancementsState}`;
             } catch (error) {
                 console.error('获取状态指纹失败:', error);
                 return '';
