@@ -178,7 +178,14 @@
             version: '版本',
             settingsReset: '设置已重置',
             confirmReset: '确定要重置所有设置为默认值吗？',
-            confirmReload: '确定要重新加载页面吗？'
+            confirmReload: '确定要重新加载页面吗？',
+
+            checkUpdate: '检查更新', checking: '检查中...',
+            newVersion: '发现新版本', latestVersion: '已是最新版本',
+            hasUpdate: '🔄 有新版本', isLatest: '✅ 最新版本',
+            latestLabel: '最新版本:', updateTime: '更新时间:', changelog: '更新内容:',
+            newFound: '发现新版本！请查看下方更新内容', alreadyLatest: '当前已是最新版本！',
+            checkFailed: '检查更新失败，请稍后重试', loadingInfo: '正在获取版本信息...'
         }
     } : {
         directBuy: 'Buy(Left)', bidOrder: 'Bid(Right)',
@@ -257,7 +264,14 @@
             version: 'Version',
             settingsReset: 'Settings Reset',
             confirmReset: 'Reset all settings to default values?',
-            confirmReload: 'Reload the page?'
+            confirmReload: 'Reload the page?',
+
+            checkUpdate: 'Check Update', checking: 'Checking...',
+            newVersion: 'New Version', latestVersion: 'Latest Version',
+            hasUpdate: '🔄 Update Available', isLatest: '✅ Up to Date',
+            latestLabel: 'Latest:', updateTime: 'Updated:', changelog: 'Changelog:',
+            newFound: 'New version found! Check details below', alreadyLatest: 'Already up to date!',
+            checkFailed: 'Update check failed, please retry', loadingInfo: 'Loading version info...'
         }
     };
 
@@ -893,11 +907,117 @@
                     content: this.createScriptsTabContent.bind(this)
                 }
             ];
+            this.versionInfo = {
+                current: "3.5.0", // 当前版本
+                latest: null,
+                updateTime: null,
+                changelog: null
+            };
             this.init();
         }
+
         init() {
             this.setupObserver();
             this.setupStyles();
+            this.loadVersionInfo();
+        }
+
+        // 加载版本信息
+        async loadVersionInfo() {
+            const urls = [
+                'https://cdn.jsdelivr.net/gh/CYR2077/MWI-Production-Gathering-Enhanced@main/version.json',
+                'https://raw.githubusercontent.com/CYR2077/MWI-Production-Gathering-Enhanced/main/version.json',
+                'https://hub.gitmirror.com/raw.githubusercontent.com/CYR2077/MWI-Production-Gathering-Enhanced/main/version.json'
+            ];
+
+            for (const url of urls) {
+                try {
+                    const controller = new AbortController();
+                    const timeoutId = setTimeout(() => controller.abort(), 5000); // 5秒超时
+
+                    const response = await fetch(url, {
+                        cache: 'no-cache',
+                        signal: controller.signal
+                    });
+                    clearTimeout(timeoutId);
+
+                    const data = await response.json();
+
+                    this.versionInfo.latest = data.version;
+                    this.versionInfo.updateTime = data.update_time;
+                    this.versionInfo.changelog = data.changelog;
+
+                    this.updateVersionDisplay();
+                    return;
+                } catch (error) {
+                    console.warn(`Failed to load from ${url}:`, error);
+                }
+            }
+
+            console.error('All version sources failed');
+        }
+
+        // 更新版本显示
+        updateVersionDisplay() {
+            const versionElement = document.querySelector('.version-info');
+            const updateButton = document.querySelector('.check-update-btn');
+
+            if (versionElement) {
+                const isUpdateAvailable = this.versionInfo.latest &&
+                    this.versionInfo.latest !== this.versionInfo.current;
+
+                versionElement.innerHTML = this.renderVersionInfoHTML();
+
+                if (updateButton) {
+                    if (isUpdateAvailable) {
+                        updateButton.textContent = `${LANG.settings.newVersion}`;
+                        updateButton.style.backgroundColor = 'rgba(76, 175, 80, 0.8)';
+                    } else {
+                        updateButton.textContent = `${LANG.settings.latestVersion}`;
+                        updateButton.style.backgroundColor = 'rgba(158, 158, 158, 0.8)';
+                    }
+                }
+            }
+        }
+
+        // 检查更新
+        async checkForUpdates() {
+            const updateButton = document.querySelector('.check-update-btn');
+            if (updateButton) {
+                updateButton.textContent = `${LANG.settings.checking}`;
+                updateButton.disabled = true;
+            }
+
+            try {
+                await this.loadVersionInfo();
+
+                const isUpdateAvailable = this.versionInfo.latest &&
+                    this.versionInfo.latest !== this.versionInfo.current;
+
+                // 更新版本信息显示，包括更新日志
+                this.showVersionDetails(isUpdateAvailable);
+
+                // 显示简单的状态提示
+                if (isUpdateAvailable) {
+                    this.showToast(`${LANG.settings.newFound}`, 'success');
+                } else {
+                    this.showToast(`${LANG.settings.alreadyLatest}`, 'success');
+                }
+            } catch (error) {
+                this.showToast(`${LANG.settings.checkFailed}`, 'error');
+            } finally {
+                if (updateButton) {
+                    updateButton.disabled = false;
+                }
+                this.updateVersionDisplay();
+            }
+        }
+
+        // 显示版本详情和更新日志
+        showVersionDetails(isUpdateAvailable) {
+            const versionElement = document.querySelector('.version-info');
+            if (!versionElement) return;
+            versionElement.innerHTML = this.renderVersionInfoHTML();
         }
 
         // 设置观察器监听设置面板的变化
@@ -983,12 +1103,25 @@
                     background-color: rgba(33, 150, 243, 0.9);
                 }
                 
+                .custom-tab-button:disabled {
+                    background-color: rgba(158, 158, 158, 0.5);
+                    cursor: not-allowed;
+                }
+                
                 .custom-tab-button.danger {
                     background-color: rgba(244, 67, 54, 0.8);
                 }
                 
                 .custom-tab-button.danger:hover {
                     background-color: rgba(244, 67, 54, 0.9);
+                }
+                
+                .check-update-btn {
+                    background-color: rgba(76, 175, 80, 0.8) !important;
+                }
+                
+                .check-update-btn:hover {
+                    background-color: rgba(76, 175, 80, 0.9) !important;
                 }
                 
                 .custom-tab-info {
@@ -1000,6 +1133,10 @@
                     font-size: 12px;
                     color: var(--color-text-dark-mode);
                     border: 1px solid var(--item-border);
+                }
+                
+                .version-info {
+                    margin-bottom: 12px;
                 }
             `;
             document.head.appendChild(style);
@@ -1139,12 +1276,12 @@
             button.setAttribute('aria-selected', 'false');
 
             button.innerHTML = `
-        <span class="MuiBadge-root TabsComponent_badge__1Du26 css-1rzb3uu">
-            ${LANG.settings.tabName}
-            <span class="MuiBadge-badge MuiBadge-standard MuiBadge-invisible MuiBadge-anchorOriginTopRight MuiBadge-anchorOriginTopRightRectangular MuiBadge-overlapRectangular css-vwo4eg"></span>
-        </span>
-        <span class="MuiTouchRipple-root css-w0pj6f"></span>
-    `;
+                <span class="MuiBadge-root TabsComponent_badge__1Du26 css-1rzb3uu">
+                    ${LANG.settings.tabName}
+                    <span class="MuiBadge-badge MuiBadge-standard MuiBadge-invisible MuiBadge-anchorOriginTopRight MuiBadge-anchorOriginTopRightRectangular MuiBadge-overlapRectangular css-vwo4eg"></span>
+                </span>
+                <span class="MuiTouchRipple-root css-w0pj6f"></span>
+            `;
 
             return button;
         }
@@ -1199,6 +1336,24 @@
             indicator.style.left = `${rect.left - containerRect.left}px`;
             indicator.style.width = `${rect.width}px`;
         }
+        renderVersionInfoHTML() {
+            const isUpdateAvailable = this.versionInfo.latest &&
+                this.versionInfo.latest !== this.versionInfo.current;
+
+            const statusIcon = isUpdateAvailable
+                ? `<span style="color: #f44336;">${LANG.settings.hasUpdate}</span>`
+                : `<span style="color: #4caf50;">${LANG.settings.isLatest}</span>`;
+
+            return `
+                <div><strong>${LANG.settings.version}:</strong> ${this.versionInfo.current}</div>
+                ${this.versionInfo.latest ? `
+                    <div><strong>${LANG.settings.latestLabel}:</strong> ${this.versionInfo.latest} ${statusIcon}</div>
+                    <div><strong>${LANG.settings.updateTime}:</strong> ${this.versionInfo.updateTime}</div>
+                    ${this.versionInfo.changelog ? `<div><strong>${LANG.settings.changelog}:</strong> ${this.versionInfo.changelog}</div>` : ''}
+                ` : `<div>${LANG.settings.loadingInfo}</div>`}
+            `;
+        }
+
 
         // 创建脚本设置选项卡内容
         createScriptsTabContent() {
@@ -1206,75 +1361,78 @@
             container.className = 'custom-tab-content';
 
             container.innerHTML = `
-            <div class="custom-tab-option">
-                <input type="checkbox" id="quickPurchase" ${window.PGE_CONFIG?.quickPurchase ? 'checked' : ''}>
-                <label for="quickPurchase">
-                    <strong>🛒 ${LANG.settings.quickPurchase.title}</strong><br>
-                    <span style="font-size: 12px; opacity: 0.8;">${LANG.settings.quickPurchase.description}</span>
-                </label>
-            </div>
-            
-            <div class="custom-tab-option">
-                <input type="checkbox" id="universalProfit" ${window.PGE_CONFIG?.universalProfit ? 'checked' : ''}>
-                <label for="universalProfit">
-                    <strong>📊 ${LANG.settings.universalProfit.title}</strong><br>
-                    <span style="font-size: 12px; opacity: 0.8;">${LANG.settings.universalProfit.description}</span>
-                </label>
-            </div>
-            
-            <div class="custom-tab-option">
-                <input type="checkbox" id="alchemyProfit" ${window.PGE_CONFIG?.alchemyProfit ? 'checked' : ''}>
-                <label for="alchemyProfit">
-                    <strong>🧪 ${LANG.settings.alchemyProfit.title}</strong><br>
-                    <span style="font-size: 12px; opacity: 0.8;">${LANG.settings.alchemyProfit.description}</span>
-                </label>
-            </div>
-            
-            <div class="custom-tab-option">
-                <input type="checkbox" id="considerArtisanTea" ${window.PGE_CONFIG?.considerArtisanTea ? 'checked' : ''}>
-                <label for="considerArtisanTea">
-                    <strong>🍵 ${LANG.settings.considerArtisanTea.title}</strong><br>
-                    <span style="font-size: 12px; opacity: 0.8;">${LANG.settings.considerArtisanTea.description}</span>
-                </label>
-            </div>
-            
-            <div class="custom-tab-option">
-                <input type="checkbox" id="gatheringEnhanced" ${window.PGE_CONFIG?.gatheringEnhanced ? 'checked' : ''}>
-                <label for="gatheringEnhanced">
-                    <strong>🎯 ${LANG.settings.gatheringEnhanced.title}</strong><br>
-                    <span style="font-size: 12px; opacity: 0.8;">${LANG.settings.gatheringEnhanced.description}</span>
-                </label>
-            </div>
-            
-            <div class="custom-tab-option">
-                <input type="checkbox" id="characterSwitcher" ${window.PGE_CONFIG?.characterSwitcher ? 'checked' : ''}>
-                <label for="characterSwitcher">
-                    <strong>👤 ${LANG.settings.characterSwitcher.title}</strong><br>
-                    <span style="font-size: 12px; opacity: 0.8;">${LANG.settings.characterSwitcher.description}</span>
-                </label>
-            </div>
-            
-            <div class="custom-tab-option">
-                <input type="checkbox" id="autoClaimMarketListings" ${window.PGE_CONFIG?.autoClaimMarketListings ? 'checked' : ''}>
-                <label for="autoClaimMarketListings">
-                    <strong>🎁 ${LANG.settings.autoClaimMarketListings.title}</strong><br>
-                    <span style="font-size: 12px; opacity: 0.8;">${LANG.settings.autoClaimMarketListings.description}</span>
-                </label>
-            </div>
-            
-            <div class="custom-tab-actions">
-                <button class="custom-tab-button" onclick="window.settingsTabManager.resetSettings()">
-                    ${LANG.settings.resetToDefault}
-                </button>
-                <button class="custom-tab-button danger" onclick="window.settingsTabManager.reloadPage()">
-                    ${LANG.settings.reloadPage}
-                </button>
-            </div>
-            
-            <div class="custom-tab-info">
-                <div><strong>${LANG.settings.version}:</strong> 3.5.0</div>
-            </div>
-        `;
+                <div class="custom-tab-option">
+                    <input type="checkbox" id="quickPurchase" ${window.PGE_CONFIG?.quickPurchase ? 'checked' : ''}>
+                    <label for="quickPurchase">
+                        <strong>🛒 ${LANG.settings.quickPurchase.title}</strong><br>
+                        <span style="font-size: 12px; opacity: 0.8;">${LANG.settings.quickPurchase.description}</span>
+                    </label>
+                </div>
+                
+                <div class="custom-tab-option">
+                    <input type="checkbox" id="universalProfit" ${window.PGE_CONFIG?.universalProfit ? 'checked' : ''}>
+                    <label for="universalProfit">
+                        <strong>📊 ${LANG.settings.universalProfit.title}</strong><br>
+                        <span style="font-size: 12px; opacity: 0.8;">${LANG.settings.universalProfit.description}</span>
+                    </label>
+                </div>
+                
+                <div class="custom-tab-option">
+                    <input type="checkbox" id="alchemyProfit" ${window.PGE_CONFIG?.alchemyProfit ? 'checked' : ''}>
+                    <label for="alchemyProfit">
+                        <strong>🧪 ${LANG.settings.alchemyProfit.title}</strong><br>
+                        <span style="font-size: 12px; opacity: 0.8;">${LANG.settings.alchemyProfit.description}</span>
+                    </label>
+                </div>
+                
+                <div class="custom-tab-option">
+                    <input type="checkbox" id="considerArtisanTea" ${window.PGE_CONFIG?.considerArtisanTea ? 'checked' : ''}>
+                    <label for="considerArtisanTea">
+                        <strong>🍵 ${LANG.settings.considerArtisanTea.title}</strong><br>
+                        <span style="font-size: 12px; opacity: 0.8;">${LANG.settings.considerArtisanTea.description}</span>
+                    </label>
+                </div>
+                
+                <div class="custom-tab-option">
+                    <input type="checkbox" id="gatheringEnhanced" ${window.PGE_CONFIG?.gatheringEnhanced ? 'checked' : ''}>
+                    <label for="gatheringEnhanced">
+                        <strong>🎯 ${LANG.settings.gatheringEnhanced.title}</strong><br>
+                        <span style="font-size: 12px; opacity: 0.8;">${LANG.settings.gatheringEnhanced.description}</span>
+                    </label>
+                </div>
+                
+                <div class="custom-tab-option">
+                    <input type="checkbox" id="characterSwitcher" ${window.PGE_CONFIG?.characterSwitcher ? 'checked' : ''}>
+                    <label for="characterSwitcher">
+                        <strong>👤 ${LANG.settings.characterSwitcher.title}</strong><br>
+                        <span style="font-size: 12px; opacity: 0.8;">${LANG.settings.characterSwitcher.description}</span>
+                    </label>
+                </div>
+                
+                <div class="custom-tab-option">
+                    <input type="checkbox" id="autoClaimMarketListings" ${window.PGE_CONFIG?.autoClaimMarketListings ? 'checked' : ''}>
+                    <label for="autoClaimMarketListings">
+                        <strong>🎁 ${LANG.settings.autoClaimMarketListings.title}</strong><br>
+                        <span style="font-size: 12px; opacity: 0.8;">${LANG.settings.autoClaimMarketListings.description}</span>
+                    </label>
+                </div>
+                
+                <div class="custom-tab-actions">
+                    <button class="custom-tab-button" onclick="window.settingsTabManager.resetSettings()">
+                        ${LANG.settings.resetToDefault}
+                    </button>
+                    <button class="custom-tab-button check-update-btn" onclick="window.settingsTabManager.checkForUpdates()">
+                        ${LANG.settings.checkUpdate}
+                    </button>
+                    <button class="custom-tab-button danger" onclick="window.settingsTabManager.reloadPage()">
+                        ${LANG.settings.reloadPage}
+                    </button>
+                </div>
+                
+                <div class="custom-tab-info">
+                    <div class="version-info">${this.renderVersionInfoHTML()}</div>
+                </div>
+            `;
 
             // 绑定设置变更事件
             container.addEventListener('change', (e) => {
@@ -1446,7 +1604,6 @@
             }
 
             try {
-                // 使用 PGE.core 而不是 getGameCore
                 if (window.PGE?.core?.handleClaimAllMarketListings) {
                     window.PGE.core.handleClaimAllMarketListings();
                     this.lastExecutionTime = currentTime;
@@ -3674,7 +3831,7 @@
             }
         }
 
-        // 新增：处理购物车购买结果的方法
+        // 处理购物车购买结果的方法
         processCartResults(results, isBidOrder) {
             let successCount = 0;
 
@@ -5010,10 +5167,9 @@
             });
         }
 
-        //获取基础材料消耗量（不考虑工匠茶等buff影响）
+        //获取基础材料消耗量
         static getBaseMaterialConsumption(materialContainer, index) {
             try {
-                // 尝试从React props中获取基础消耗量
                 const reactKey = Object.keys(materialContainer).find(key => key.startsWith('__reactProps$'));
                 if (reactKey) {
                     const props = materialContainer[reactKey];
@@ -5145,15 +5301,8 @@
         // 设置游戏核心监控（总是启用）
         setupGameCoreMonitor();
 
-        // 在DOM加载完成后或立即初始化
+        // 初始化脚本设置面板
         initSettingsTabManager();
-        // if (document.readyState === 'loading') {
-        //     document.addEventListener('DOMContentLoaded', initSettingsTabManager);
-        // } else {
-        //     initSettingsTabManager();
-        // }
-        // 导出到全局作用域，以便其他地方调用
-        // window.initSettingsTabManager = initSettingsTabManager;
     }
 
     // ==================== 初始化状态 ====================
