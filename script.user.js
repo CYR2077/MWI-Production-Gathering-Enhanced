@@ -475,6 +475,27 @@
             } catch {
                 return null;
             }
+        },
+
+        waitForElement(selector, callback, timeout = 10000) {
+            const startTime = Date.now();
+
+            function checkElement() {
+                const element = document.querySelector(selector);
+                if (element) {
+                    callback(element);
+                    return;
+                }
+
+                if (Date.now() - startTime > timeout) {
+                    console.warn(`等待元素 ${selector} 超时`);
+                    return;
+                }
+
+                setTimeout(checkElement, 100);
+            }
+
+            checkElement();
         }
     };
 
@@ -628,10 +649,11 @@
                 });
 
                 ws.addEventListener("open", () => {
-                    setTimeout(() => initGameCore(), 500);
-                    setTimeout(() => {
-                        initializeModules();
-                    }, 1000);
+                    // 检测头像元素是否存在，存在时才初始化模组
+                    utils.waitForElement('.Header_avatar__2RQgo', () => {
+                        setTimeout(() => initGameCore(), 100);
+                        setTimeout(() => initializeModules(), 100);
+                    });
                 });
 
                 ws.addEventListener("close", () => {
@@ -2090,7 +2112,7 @@
             if (this.isProcessing || !this.requestQueue.length || !this.initialized || !window.PGE?.core) return;
             this.isProcessing = true;
             while (this.requestQueue.length > 0) {
-                const batch = this.requestQueue.splice(0, 6);
+                const batch = this.requestQueue.splice(0, 2);
                 await Promise.all(batch.map(async ({ itemHrid, resolve }) => {
                     if (this.marketData[itemHrid] && !utils.isCacheExpired(itemHrid, this.marketTimestamps, this.cacheExpiry)) {
                         return resolve(this.marketData[itemHrid]);
@@ -2512,12 +2534,15 @@
         }
 
         hasNullPrices(data, buyType, sellType) {
-            const checkItems = (items, priceType) => items.some(item => item[priceType] === null);
+            const checkItems = (items, priceType) => items.some(item =>
+                item[priceType] === null || item[priceType] <= 0.0
+            );
 
             return checkItems(data.requirements, buyType === 'ask' ? 'asks' : 'bids') ||
                 checkItems(data.drops, sellType === 'ask' ? 'asks' : 'bids') ||
                 checkItems(data.consumables, buyType === 'ask' ? 'asks' : 'bids') ||
-                data.catalyst[buyType === 'ask' ? 'asks' : 'bids'] === null;
+                data.catalyst[buyType === 'ask' ? 'asks' : 'bids'] === null ||
+                data.catalyst[buyType === 'ask' ? 'asks' : 'bids'] <= 0.0;
         }
 
         async getActionData() {
@@ -2647,7 +2672,7 @@
                     const element = document.getElementById(type.id);
                     if (element) {
                         if (profit === null) {
-                            element.textContent = LANG.noMarketData;
+                            element.textContent = LANG.noData;
                             element.style.color = CONFIG.COLORS.neutral;
                         } else {
                             element.textContent = utils.formatProfit(profit);
@@ -3002,10 +3027,18 @@
         }
 
         hasNullPrices(data, buyType, sellType) {
-            const checkRequirements = (items, priceType) => items.some(item => item[priceType] === null || item[priceType] <= 0.0);
-            const checkOutputs = (items, priceType) => items.some(item => item[priceType] === null || item[priceType] <= 0.0);
-            const checkUpgrades = (items, priceType) => items.some(item => item[priceType] === null || item[priceType] <= 0.0);
-            const checkDrinks = (drinks, priceType) => drinks.some(drink => drink[priceType] === null || drink[priceType] <= 0.0);
+            const checkRequirements = (items, priceType) => items.some(item =>
+                item[priceType] === null || item[priceType] <= 0.0
+            );
+            const checkOutputs = (items, priceType) => items.some(item =>
+                item[priceType] === null || item[priceType] <= 0.0
+            );
+            const checkUpgrades = (items, priceType) => items.some(item =>
+                item[priceType] === null || item[priceType] <= 0.0
+            );
+            const checkDrinks = (drinks, priceType) => drinks.some(drink =>
+                drink[priceType] === null || drink[priceType] <= 0.0
+            );
 
             return checkRequirements(data.requirements, buyType === 'ask' ? 'asks' : 'bids') ||
                 checkOutputs(data.outputs, sellType === 'ask' ? 'asks' : 'bids') ||
@@ -3129,7 +3162,7 @@
                     const element = document.getElementById(type.id);
                     if (element) {
                         if (profit === null) {
-                            element.textContent = LANG.noMarketData;
+                            element.textContent = LANG.noData;
                             element.style.color = CONFIG.COLORS.neutral;
                         } else {
                             element.textContent = utils.formatProfit(profit);
@@ -5318,6 +5351,4 @@
 
     // ==================== 启动 ====================
     setupWebSocketInterception();
-    setupGameCoreMonitor();
-
 })();
