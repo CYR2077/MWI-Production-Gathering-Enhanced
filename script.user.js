@@ -930,7 +930,7 @@
                 }
             ];
             this.versionInfo = {
-                current: "3.5.0", // 当前版本
+                current: "3.5.1", // 当前版本
                 latest: null,
                 updateTime: null,
                 changelog: null
