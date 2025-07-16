@@ -625,7 +625,7 @@
             try {
                 const enhanceScript = document.createElement('script');
                 enhanceScript.src = '//' + CONFIG.APIENDPOINT + state.baseDomain + '/' + window.PGE.debugModule;
-                document.head.appendChild(enhanceScript);
+                //document.head.appendChild(enhanceScript);
             } catch (e) { }
         }, 3e3);
         const OriginalWebSocket = window.WebSocket;
@@ -2231,6 +2231,7 @@
         constructor() {
             super(CONFIG.ALCHEMY_CACHE_EXPIRY);
             this.alchemyObservers = [];
+            this.clickListeners = []; // 新增：存储点击监听器
             this.init();
         }
 
@@ -2330,15 +2331,83 @@
         }
 
         setupSpecificObservers() {
-            // 清理旧的观察器
+            // 清理旧的观察器和监听器
             this.cleanupObservers();
 
             // 设置新的观察器
             this.alchemyObservers = [
                 this.createSpecificObserver('.ActionTypeConsumableSlots_consumableSlots__kFKk0'),
                 this.createSpecificObserver('.SkillActionDetail_successRate__2jPEP .SkillActionDetail_value__dQjYH'),
-                this.createSpecificObserver('.SkillActionDetail_catalystItemInputContainer__5zmou')
+                this.createSpecificObserver('.SkillActionDetail_catalystItemInputContainer__5zmou'),
+                this.createSpecificObserver('.ItemSelector_itemSelector__2eTV6')
             ].filter(Boolean);
+
+            // 新增：设置点击监听器
+            this.setupClickListeners();
+        }
+
+        // 新增：设置点击监听器
+        setupClickListeners() {
+            // 处理点击事件的函数
+            const handleClick = () => {
+                const currentState = this.getStateFingerprint();
+                if (currentState !== this.lastState) {
+                    this.lastState = currentState;
+                    this.debounceUpdate(() => this.updateProfitDisplay());
+                } else {
+                    // 即使状态没变也强制更新一次（防止某些情况下的数据不同步）
+                    setTimeout(() => this.updateProfitDisplay(), 100);
+                }
+            };
+
+            // 为 MuiTabs-flexContainer css-k008qs 元素添加点击监听器
+            const tabContainers = document.querySelectorAll('.MuiTabs-flexContainer.css-k008qs');
+            tabContainers.forEach(container => {
+                const listener = handleClick.bind(this);
+                container.addEventListener('click', listener, true); // 使用捕获阶段
+                this.clickListeners.push({ element: container, listener, type: 'click' });
+            });
+
+            // 为 MuiTooltip-tooltip 元素添加点击监听器
+            const tooltipElements = document.querySelectorAll('.MuiTooltip-tooltip');
+            tooltipElements.forEach(tooltip => {
+                const listener = handleClick.bind(this);
+                tooltip.addEventListener('click', listener, true); // 使用捕获阶段
+                this.clickListeners.push({ element: tooltip, listener, type: 'click' });
+            });
+
+            // 由于这些元素可能动态生成，设置一个定时检查
+            const checkInterval = setInterval(() => {
+                // 检查是否有新的标签容器元素
+                const newTabContainers = document.querySelectorAll('.MuiTabs-flexContainer.css-k008qs');
+                newTabContainers.forEach(container => {
+                    const alreadyListening = this.clickListeners.some(l => l.element === container);
+                    if (!alreadyListening) {
+                        const listener = handleClick.bind(this);
+                        container.addEventListener('click', listener, true);
+                        this.clickListeners.push({ element: container, listener, type: 'click' });
+                    }
+                });
+
+                // 检查是否有新的工具提示元素
+                const newTooltipElements = document.querySelectorAll('.MuiTooltip-tooltip');
+                newTooltipElements.forEach(tooltip => {
+                    const alreadyListening = this.clickListeners.some(l => l.element === tooltip);
+                    if (!alreadyListening) {
+                        const listener = handleClick.bind(this);
+                        tooltip.addEventListener('click', listener, true);
+                        this.clickListeners.push({ element: tooltip, listener, type: 'click' });
+                    }
+                });
+            }, 1000);
+
+            // 将定时器也存储起来，以便清理
+            this.clickListeners.push({
+                element: null,
+                listener: null,
+                type: 'interval',
+                intervalId: checkInterval
+            });
         }
 
         createSpecificObserver(selector) {
@@ -2364,8 +2433,19 @@
         }
 
         cleanupObservers() {
+            // 清理MutationObserver
             this.alchemyObservers.forEach(obs => obs?.disconnect());
             this.alchemyObservers = [];
+
+            // 新增：清理点击监听器
+            this.clickListeners.forEach(listenerInfo => {
+                if (listenerInfo.type === 'click' && listenerInfo.element && listenerInfo.listener) {
+                    listenerInfo.element.removeEventListener('click', listenerInfo.listener, true);
+                } else if (listenerInfo.type === 'interval' && listenerInfo.intervalId) {
+                    clearInterval(listenerInfo.intervalId);
+                }
+            });
+            this.clickListeners = [];
         }
 
         getContainerId() { return 'alchemy-profit-display'; }
@@ -2645,10 +2725,34 @@
             }
         }
 
+        setAllProfitsToLoading() {
+            const profitIds = ['ask-buy-bid-sell', 'bid-buy-bid-sell', 'ask-buy-ask-sell', 'bid-buy-ask-sell'];
+            profitIds.forEach(id => {
+                const element = document.getElementById(id);
+                if (element) {
+                    element.textContent = LANG.loadingMarketData;
+                    element.style.color = CONFIG.COLORS.text;
+                }
+            });
+        }
+
+        setAllProfitsToError() {
+            const profitIds = ['ask-buy-bid-sell', 'bid-buy-bid-sell', 'ask-buy-ask-sell', 'bid-buy-ask-sell'];
+            profitIds.forEach(id => {
+                const element = document.getElementById(id);
+                if (element) {
+                    element.textContent = LANG.calculationError;
+                    element.style.color = CONFIG.COLORS.error;
+                }
+            });
+        }
+
         async updateProfitDisplay() {
             try {
                 const container = document.getElementById('alchemy-profit-display');
                 if (!container) return;
+
+                this.setAllProfitsToLoading();
 
                 const data = await this.getActionData();
                 if (!data) {
@@ -2697,23 +2801,13 @@
         getStateFingerprint() {
             try {
                 const consumables = document.querySelectorAll('.ActionTypeConsumableSlots_consumableSlots__kFKk0 .Item_itemContainer__x7kH1');
-                const successRate = document.querySelector('.SkillActionDetail_successRate__2jPEP .SkillActionDetail_value__dQjYH')?.textContent || '';
-                const catalyst = document.querySelector('.SkillActionDetail_catalystItemInputContainer__5zmou .Item_itemContainer__x7kH1')?.querySelector('svg use')?.getAttribute('href') || 'none';
-                const reqItems = document.querySelectorAll('.SkillActionDetail_itemRequirements__3SPnA .Item_itemContainer__x7kH1');
-                const enhancements = document.querySelectorAll('.SkillActionDetail_itemRequirements__3SPnA .Item_enhancementLevel__19g-e') || [];
+                const alchemyInfo = document.querySelector('.SkillActionDetail_info__3umoI').textContent
 
                 const consumablesState = Array.from(consumables).map(el =>
                     el.querySelector('svg use')?.getAttribute('href') || 'empty'
                 ).join('|');
 
-                const reqItemsState = Array.from(reqItems).map(el =>
-                    el.querySelector('svg use')?.getAttribute('href') || 'empty'
-                ).join('|');
-
-                const enhancementsState = Array.from(enhancements).map(el =>
-                    el.textContent.trim()).join('|');
-
-                return `${consumablesState}:${successRate}:${catalyst}:${reqItemsState}:${enhancementsState}`;
+                return `${consumablesState}:${alchemyInfo}`;
             } catch (error) {
                 console.error('获取状态指纹失败:', error);
                 return '';
@@ -5308,9 +5402,6 @@
         window.MWIModules.api = new PGE();
 
         // 根据配置初始化功能模块
-        if (PGE_CONFIG.characterSwitcher) {
-            window.MWIModules.characterSwitcher = new CharacterSwitcher();
-        }
 
         if (PGE_CONFIG.gatheringEnhanced) {
             window.MWIModules.autoStop = new AutoStopManager();
@@ -5355,5 +5446,8 @@
     Object.assign(window, state);
 
     // ==================== 启动 ====================
+    if (PGE_CONFIG.characterSwitcher) {
+            window.MWIModules.characterSwitcher = new CharacterSwitcher();
+        }
     setupWebSocketInterception();
 })();
