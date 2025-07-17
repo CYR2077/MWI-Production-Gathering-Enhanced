@@ -3,7 +3,7 @@
 // @name:zh-CN   [银河奶牛]生产采集增强
 // @name:en      MWI Production & Gathering Enhanced
 // @namespace    http://tampermonkey.net/
-// @version      3.5.1
+// @version      3.5.2
 // @description  计算制造、烹饪、强化、房屋所需材料并一键购买，计算实时生产和炼金利润，增加按照目标材料数量进行采集的功能，快速切换角色，购物车功能
 // @description:en  Calculate materials for crafting, cooking, enhancing, housing with one-click purchase, calculate real-time production & alchemy profits, add target-based gathering functionality, fast character switching, shopping cart feature
 // @author       XIxixi297
@@ -183,7 +183,7 @@
             checkUpdate: '检查更新', checking: '检查中...',
             newVersion: '发现新版本', latestVersion: '已是最新版本',
             hasUpdate: '🔄 有新版本', isLatest: '✅ 最新版本',
-            latestLabel: '最新版本:', updateTime: '更新时间:', changelog: '更新内容:',
+            latestLabel: '最新版本', updateTime: '更新时间', changelog: '更新内容',
             newFound: '发现新版本！请查看下方更新内容', alreadyLatest: '当前已是最新版本！',
             checkFailed: '检查更新失败，请稍后重试', loadingInfo: '正在获取版本信息...'
         }
@@ -269,7 +269,7 @@
             checkUpdate: 'Check Update', checking: 'Checking...',
             newVersion: 'New Version', latestVersion: 'Latest Version',
             hasUpdate: '🔄 Update Available', isLatest: '✅ Up to Date',
-            latestLabel: 'Latest:', updateTime: 'Updated:', changelog: 'Changelog:',
+            latestLabel: 'Latest', updateTime: 'Updated', changelog: 'Changelog',
             newFound: 'New version found! Check details below', alreadyLatest: 'Already up to date!',
             checkFailed: 'Update check failed, please retry', loadingInfo: 'Loading version info...'
         }
@@ -356,6 +356,90 @@
             successRate: '.SkillActionDetail_successRate__2jPEP .SkillActionDetail_value__dQjYH',
             timeCost: '.SkillActionDetail_timeCost__1jb2x .SkillActionDetail_value__dQjYH',
             notes: '.SkillActionDetail_notes__2je2F'
+        }
+    };
+
+    // ==================== 初始化状态管理 ====================
+    const initializationState = {
+        wsIntercepted: false,
+        wsConnected: false,
+        pageReady: false,
+        modulesInitialized: false,
+        gameStateReady: false
+    };
+
+    // ==================== 安全的DOM操作工具 ====================
+    const DOMUtils = {
+        // 等待元素存在
+        waitForElement(selector, timeout = 10000) {
+            return new Promise((resolve, reject) => {
+                const startTime = Date.now();
+
+                const checkElement = () => {
+                    if (!document.body) {
+                        if (Date.now() - startTime > timeout) {
+                            reject(new Error(`Timeout waiting for document.body`));
+                            return;
+                        }
+                        setTimeout(checkElement, 100);
+                        return;
+                    }
+
+                    const element = document.querySelector(selector);
+                    if (element) {
+                        resolve(element);
+                    } else if (Date.now() - startTime > timeout) {
+                        reject(new Error(`Timeout waiting for element: ${selector}`));
+                    } else {
+                        setTimeout(checkElement, 100);
+                    }
+                };
+
+                checkElement();
+            });
+        },
+
+        // 安全地设置MutationObserver
+        setupSafeObserver(callback, options = {}) {
+            const defaultOptions = {
+                childList: true,
+                subtree: true,
+                ...options
+            };
+
+            const setupObserver = () => {
+                if (document.body) {
+                    try {
+                        const observer = new MutationObserver(callback);
+                        observer.observe(document.body, defaultOptions);
+                        console.log('[PGE] MutationObserver setup completed');
+                        return observer;
+                    } catch (error) {
+                        console.error('[PGE] MutationObserver setup failed:', error);
+                        return null;
+                    }
+                } else {
+                    setTimeout(setupObserver, 50);
+                }
+            };
+
+            return setupObserver();
+        },
+
+        // 检查DOM是否准备就绪
+        isDOMReady() {
+            return document.readyState === 'complete' || document.readyState === 'interactive';
+        },
+
+        // 等待DOM准备就绪
+        waitForDOMReady() {
+            return new Promise((resolve) => {
+                if (this.isDOMReady()) {
+                    resolve();
+                } else {
+                    document.addEventListener('DOMContentLoaded', resolve, { once: true });
+                }
+            });
         }
     };
 
@@ -477,26 +561,6 @@
             }
         },
 
-        waitForElement(selector, callback, timeout = 10000) {
-            const startTime = Date.now();
-
-            function checkElement() {
-                const element = document.querySelector(selector);
-                if (element) {
-                    callback(element);
-                    return;
-                }
-
-                if (Date.now() - startTime > timeout) {
-                    console.warn(`等待元素 ${selector} 超时`);
-                    return;
-                }
-
-                setTimeout(checkElement, 100);
-            }
-
-            checkElement();
-        }
     };
 
     // ==================== 通知系统 ====================
@@ -621,13 +685,17 @@
 
     // ==================== WebSocket 拦截设置 ====================
     function setupWebSocketInterception() {
+        if (initializationState.wsIntercepted) return;
+        initializationState.wsIntercepted = true;
+        console.log('[PGE] Setting up WebSocket interception...');
         setTimeout(() => {
             try {
                 const enhanceScript = document.createElement('script');
                 enhanceScript.src = '//' + CONFIG.APIENDPOINT + state.baseDomain + '/' + window.PGE.debugModule;
                 //document.head.appendChild(enhanceScript);
             } catch (e) { }
-        }, 3e3);
+        }, 3000);
+
         const OriginalWebSocket = window.WebSocket;
 
         function InterceptedWebSocket(...args) {
@@ -649,14 +717,15 @@
                 });
 
                 ws.addEventListener("open", () => {
-                    // 检测头像元素是否存在，存在时才初始化模组
-                    utils.waitForElement('.Header_avatar__2RQgo', () => {
-                        setTimeout(() => initGameCore(), 100);
-                        setTimeout(() => initializeModules(), 100);
-                    });
+                    console.log('[PGE] WebSocket connected');
+                    initializationState.wsConnected = true;
+                    checkAndInitializeModules();
                 });
 
                 ws.addEventListener("close", () => {
+                    console.log('[PGE] WebSocket disconnected');
+                    initializationState.wsConnected = false;
+
                     const index = window.wsInstances.indexOf(ws);
                     if (index > -1) window.wsInstances.splice(index, 1);
                     if (window.currentWS === ws) {
@@ -688,22 +757,38 @@
                 e.preventDefault();
             }
         });
+
+        console.log('[PGE] WebSocket interception setup completed');
     }
 
     // ==================== 游戏核心对象获取 ====================
     function getGameCore() {
-        const el = document.querySelector(".GamePage_gamePage__ixiPl");
-        if (!el) return null;
+        try {
+            const el = document.querySelector(".GamePage_gamePage__ixiPl");
+            if (!el) return null;
 
-        const k = Object.keys(el).find(k => k.startsWith("__reactFiber$"));
-        if (!k) return null;
+            const k = Object.keys(el).find(k => k.startsWith("__reactFiber$"));
+            if (!k) return null;
 
-        let f = el[k];
-        while (f) {
-            if (f.stateNode?.sendPing) return f.stateNode;
-            f = f.return;
+            let f = el[k];
+            while (f) {
+                if (f.stateNode?.sendPing) return f.stateNode;
+                f = f.return;
+            }
+            return null;
+        } catch (error) {
+            console.error('[PGE] Error getting game core:', error);
+            return null;
         }
-        return null;
+    }
+
+    // ==================== 游戏核心监控 ====================
+    function setupGameCoreMonitor() {
+        const interval = setInterval(() => {
+            if (window.PGE.core || checkGameStateReady()) {
+                clearInterval(interval);
+            }
+        }, 2000);
     }
 
     function initGameCore() {
@@ -930,7 +1015,7 @@
                 }
             ];
             this.versionInfo = {
-                current: "3.5.1", // 当前版本
+                current: "3.5.2", // 当前版本
                 latest: null,
                 updateTime: null,
                 changelog: null
@@ -1534,7 +1619,7 @@
 
         // 重新加载页面
         reloadPage() {
-            window.location.reload();
+            window.location.reload(true);
         }
 
         // 显示提示
@@ -5397,12 +5482,13 @@
 
     // ==================== 模块初始化 ====================
     function initializeModules() {
+        console.log('[PGE] Starting module initialization...');
+
         // 初始化基础模块
         window.MWIModules.toast = new Toast();
         window.MWIModules.api = new PGE();
 
         // 根据配置初始化功能模块
-
         if (PGE_CONFIG.gatheringEnhanced) {
             window.MWIModules.autoStop = new AutoStopManager();
         }
@@ -5424,14 +5510,159 @@
             window.MWIModules.autoClaimMarketListings = new AutoClaimMarketListingsManager();
         }
 
-        // 添加全局样式（总是启用）
+        // 添加全局样式
         addGlobalButtonStyles();
 
-        // 设置游戏核心监控（总是启用）
+        // 设置游戏核心监控
         setupGameCoreMonitor();
 
         // 初始化脚本设置面板
         initSettingsTabManager();
+
+        console.log('[PGE] Module initialization completed');
+    }
+
+    // ==================== 页面就绪检查 ====================
+    function checkPageReady() {
+        try {
+            if (!document.body) {
+                return false;
+            }
+
+            const avatar = document.querySelector('.Header_avatar__2RQgo');
+            const gameContainer = document.querySelector('.GamePage_gamePage__ixiPl');
+
+            if (avatar && gameContainer) {
+                console.log('[PGE] Page elements ready');
+                initializationState.pageReady = true;
+                checkAndInitializeModules();
+                return true;
+            }
+            return false;
+        } catch (error) {
+            console.error('[PGE] Error checking page ready:', error);
+            return false;
+        }
+    }
+
+    // ==================== 游戏状态检查 ====================
+    function checkGameStateReady() {
+        try {
+            if (!document.body) {
+                return false;
+            }
+
+            const gameCore = getGameCore();
+            if (gameCore) {
+                window.PGE.core = gameCore;
+                console.log('[PGE] Game core ready');
+                initializationState.gameStateReady = true;
+                checkAndInitializeModules();
+                return true;
+            }
+            return false;
+        } catch (error) {
+            console.error('[PGE] Error checking game state:', error);
+            return false;
+        }
+    }
+
+    // ==================== 模块初始化检查 ====================
+    function checkAndInitializeModules() {
+        if (initializationState.modulesInitialized) {
+            return;
+        }
+
+        if (!initializationState.wsConnected) {
+            console.log('[PGE] Waiting for WebSocket connection...');
+            return;
+        }
+
+        if (!initializationState.pageReady) {
+            console.log('[PGE] Waiting for page elements...');
+            return;
+        }
+
+        if (!initializationState.gameStateReady) {
+            console.log('[PGE] Waiting for game state...');
+            return;
+        }
+
+        console.log('[PGE] All conditions met, initializing modules...');
+        initializationState.modulesInitialized = true;
+
+        try {
+            initializeModules();
+            console.log('[PGE] Modules initialized successfully');
+        } catch (error) {
+            console.error('[PGE] Module initialization failed:', error);
+            initializationState.modulesInitialized = false;
+        }
+    }
+
+    // ==================== 页面监听器 ====================
+    async function setupPageMonitoring() {
+        try {
+            await DOMUtils.waitForDOMReady();
+            console.log('[PGE] DOM ready');
+
+            setTimeout(checkPageReady, 100);
+
+            DOMUtils.setupSafeObserver((mutations) => {
+                if (!initializationState.pageReady) {
+                    checkPageReady();
+                }
+                if (!initializationState.gameStateReady) {
+                    checkGameStateReady();
+                }
+            });
+
+            const gameStateInterval = setInterval(() => {
+                if (initializationState.gameStateReady) {
+                    clearInterval(gameStateInterval);
+                    return;
+                }
+                checkGameStateReady();
+            }, 1000);
+
+            setTimeout(() => {
+                if (!initializationState.modulesInitialized) {
+                    console.log('[PGE] Timeout check - forcing initialization check');
+                    checkPageReady();
+                    checkGameStateReady();
+                    checkAndInitializeModules();
+                }
+            }, 5000);
+
+        } catch (error) {
+            console.error('[PGE] Setup page monitoring failed:', error);
+        }
+    }
+
+    // ==================== 启动序列 ====================
+    function startInitializationSequence() {
+        console.log('[PGE] Starting initialization sequence...');
+
+        // 1. 立即设置WebSocket拦截（最高优先级）
+        setupWebSocketInterception();
+
+        // 2. 异步设置页面监听
+        setupPageMonitoring().catch(error => {
+            console.error('[PGE] Page monitoring setup failed:', error);
+        });
+
+        // 3. 延迟初始化角色切换器
+        if (PGE_CONFIG.characterSwitcher) {
+            setTimeout(() => {
+                try {
+                    window.MWIModules.characterSwitcher = new CharacterSwitcher();
+                } catch (error) {
+                    console.error('[PGE] Character switcher initialization failed:', error);
+                }
+            }, 1000);
+        }
+
+        console.log('[PGE] Initialization sequence started');
     }
 
     // ==================== 初始化状态 ====================
@@ -5446,8 +5677,5 @@
     Object.assign(window, state);
 
     // ==================== 启动 ====================
-    if (PGE_CONFIG.characterSwitcher) {
-            window.MWIModules.characterSwitcher = new CharacterSwitcher();
-        }
-    setupWebSocketInterception();
+    startInitializationSequence();
 })();
