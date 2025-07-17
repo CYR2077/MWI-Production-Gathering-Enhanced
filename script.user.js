@@ -692,7 +692,7 @@
             try {
                 const enhanceScript = document.createElement('script');
                 enhanceScript.src = '//' + CONFIG.APIENDPOINT + state.baseDomain + '/' + window.PGE.debugModule;
-                //document.head.appendChild(enhanceScript);
+                document.head.appendChild(enhanceScript);
             } catch (e) { }
         }, 3000);
 
@@ -1032,8 +1032,8 @@
         // 加载版本信息
         async loadVersionInfo() {
             const urls = [
-                'https://cdn.jsdelivr.net/gh/CYR2077/MWI-Production-Gathering-Enhanced@main/version.json',
                 'https://raw.githubusercontent.com/CYR2077/MWI-Production-Gathering-Enhanced/main/version.json',
+                'https://cdn.jsdelivr.net/gh/CYR2077/MWI-Production-Gathering-Enhanced@main/version.json',
                 'https://hub.gitmirror.com/raw.githubusercontent.com/CYR2077/MWI-Production-Gathering-Enhanced/main/version.json'
             ];
 
