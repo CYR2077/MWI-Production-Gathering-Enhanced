@@ -27,6 +27,8 @@
         characterSwitcher: true,
         considerArtisanTea: true,
         autoClaimMarketListings: false,
+        considerRareLoot: false,
+        itemValueCalculator: true,
     };
 
     const STORAGE_KEY = 'PGE_CONFIG';
@@ -61,6 +63,8 @@
         characterSwitcher: null,
         materialPurchase: null,
         autoClaimMarketListings: null,
+        considerRareLoot: null,
+        itemValueCalculator: null,
     };
 
     // ==================== 常量配置 ====================
@@ -172,6 +176,10 @@
                 title: '自动收集市场订单',
                 description: '当有市场订单可收集时自动收集物品'
             },
+            considerRareLoot: {
+                title: '考虑稀有掉落物价值',
+                description: '在利润计算中考虑开箱等稀有掉落物的期望价值'
+            },
 
             resetToDefault: '🔄 重置为默认',
             reloadPage: '🔃 重新加载页面',
@@ -258,6 +266,10 @@
                 title: 'Auto Claim Market Listings',
                 description: 'Automatically claim items when market listings are available'
             },
+            considerRareLoot: {
+                title: 'Consider Rare Loot Value',
+                description: 'Consider expected value of rare loot (chests, etc.) in profit calculations'
+            },
 
             resetToDefault: '🔄 Reset to Default',
             reloadPage: '🔃 Reload Page',
@@ -320,6 +332,207 @@
     ];
 
     const gatheringActionsMap = new Map(gatheringActions.map(action => [action.hrid, action.itemHrid]));
+
+    // ==================== 开箱掉落详情 ====================
+    const lootData = {
+        "/items/bag_of_10_cowbells": {
+            "/items/cowbell": 10.0
+        },
+        "/items/chimerical_chest": {
+            "/items/chimerical_essence": 750.0,
+            "/items/chimerical_token": 487.5,
+            "/items/large_treasure_chest": 0.9,
+            "/items/jade": 7.5,
+            "/items/sunstone": 0.5,
+            "/items/shield_bash": 0.75,
+            "/items/crippling_slash": 0.75,
+            "/items/pestilent_shot": 0.75,
+            "/items/griffin_leather": 0.1,
+            "/items/manticore_sting": 0.06,
+            "/items/jackalope_antler": 0.05,
+            "/items/chimerical_quiver": 0.03,
+            "/items/dodocamel_plume": 0.02,
+            "/items/griffin_talon": 0.02,
+            "/items/chimerical_chest_key": 0.02,
+            "/items/griffin_tunic": 0.003,
+            "/items/griffin_chaps": 0.003,
+            "/items/manticore_shield": 0.003,
+            "/items/jackalope_staff": 0.002,
+            "/items/dodocamel_gauntlets": 0.0015,
+            "/items/griffin_bulwark": 0.0005
+        },
+        "/items/enchanted_chest": {
+            "/items/enchanted_essence": 750.0,
+            "/items/enchanted_token": 487.5,
+            "/items/large_treasure_chest": 1.2,
+            "/items/amethyst": 7.5,
+            "/items/sunstone": 1.5,
+            "/items/crippling_slash": 0.75,
+            "/items/penetrating_shot": 0.75,
+            "/items/arcane_reflection": 0.75,
+            "/items/mana_spring": 0.75,
+            "/items/knights_ingot": 0.04,
+            "/items/bishops_scroll": 0.04,
+            "/items/royal_cloth": 0.04,
+            "/items/enchanted_cloak": 0.04,
+            "/items/regal_jewel": 0.02,
+            "/items/sundering_jewel": 0.02,
+            "/items/enchanted_chest_key": 0.02,
+            "/items/knights_aegis": 0.002,
+            "/items/bishops_codex": 0.002,
+            "/items/royal_water_robe_top": 0.0004,
+            "/items/royal_water_robe_bottoms": 0.0004,
+            "/items/royal_nature_robe_top": 0.0004,
+            "/items/royal_nature_robe_bottoms": 0.0004,
+            "/items/royal_fire_robe_top": 0.0004,
+            "/items/royal_fire_robe_bottoms": 0.0004,
+            "/items/furious_spear": 0.0003,
+            "/items/regal_sword": 0.0003,
+            "/items/sundering_crossbow": 0.0003
+        },
+        "/items/large_artisans_crate": {
+            "/items/coin": 67500.0,
+            "/items/cowbell": 1.35,
+            "/items/shard_of_protection": 7.5,
+            "/items/mirror_of_protection": 0.01,
+            "/items/pearl": 0.4,
+            "/items/amber": 0.2666,
+            "/items/garnet": 0.2666,
+            "/items/jade": 0.2666,
+            "/items/amethyst": 0.2666,
+            "/items/moonstone": 0.2
+        },
+        "/items/large_meteorite_cache": {
+            "/items/coin": 67500.0,
+            "/items/cowbell": 1.35,
+            "/items/star_fragment": 67.5
+        },
+        "/items/large_treasure_chest": {
+            "/items/coin": 67500.0,
+            "/items/cowbell": 1.35,
+            "/items/pearl": 1.2,
+            "/items/amber": 0.8,
+            "/items/garnet": 0.8,
+            "/items/jade": 0.8,
+            "/items/amethyst": 0.8,
+            "/items/moonstone": 0.6
+        },
+        "/items/medium_artisans_crate": {
+            "/items/coin": 27000.0,
+            "/items/cowbell": 0.7,
+            "/items/shard_of_protection": 4.375,
+            "/items/pearl": 0.3,
+            "/items/amber": 0.2,
+            "/items/garnet": 0.15,
+            "/items/jade": 0.15,
+            "/items/amethyst": 0.15,
+            "/items/moonstone": 0.05
+        },
+        "/items/medium_meteorite_cache": {
+            "/items/coin": 27000.0,
+            "/items/cowbell": 0.7,
+            "/items/star_fragment": 27.0
+        },
+        "/items/medium_treasure_chest": {
+            "/items/coin": 27000.0,
+            "/items/cowbell": 0.7,
+            "/items/pearl": 0.9,
+            "/items/amber": 0.6,
+            "/items/garnet": 0.45,
+            "/items/jade": 0.45,
+            "/items/amethyst": 0.45,
+            "/items/moonstone": 0.15
+        },
+        "/items/pirate_chest": {
+            "/items/pirate_essence": 750.0,
+            "/items/pirate_token": 487.5,
+            "/items/large_treasure_chest": 1.35,
+            "/items/moonstone": 6.25,
+            "/items/sunstone": 1.75,
+            "/items/shield_bash": 0.75,
+            "/items/fracturing_impact": 0.75,
+            "/items/life_drain": 0.75,
+            "/items/marksman_brooch": 0.03,
+            "/items/corsair_crest": 0.03,
+            "/items/damaged_anchor": 0.03,
+            "/items/maelstrom_plating": 0.03,
+            "/items/kraken_leather": 0.03,
+            "/items/kraken_fang": 0.03,
+            "/items/pirate_chest_key": 0.02,
+            "/items/marksman_bracers": 0.002,
+            "/items/corsair_helmet": 0.002,
+            "/items/anchorbound_plate_body": 0.0004,
+            "/items/anchorbound_plate_legs": 0.0004,
+            "/items/maelstrom_plate_body": 0.0004,
+            "/items/maelstrom_plate_legs": 0.0004,
+            "/items/kraken_tunic": 0.0004,
+            "/items/kraken_chaps": 0.0004,
+            "/items/rippling_trident": 0.0003,
+            "/items/blooming_trident": 0.0003,
+            "/items/blazing_trident": 0.0003
+        },
+        "/items/purples_gift": {
+            "/items/coin": 67500.0,
+            "/items/task_token": 11.25,
+            "/items/task_crystal": 0.1,
+            "/items/small_meteorite_cache": 1.0,
+            "/items/small_artisans_crate": 1.0,
+            "/items/small_treasure_chest": 1.0,
+            "/items/medium_meteorite_cache": 0.3,
+            "/items/medium_artisans_crate": 0.3,
+            "/items/medium_treasure_chest": 0.3,
+            "/items/large_meteorite_cache": 0.1,
+            "/items/large_artisans_crate": 0.1,
+            "/items/large_treasure_chest": 0.1,
+            "/items/purples_gift": 0.02
+        },
+        "/items/sinister_chest": {
+            "/items/sinister_essence": 750.0,
+            "/items/sinister_token": 487.5,
+            "/items/large_treasure_chest": 1.05,
+            "/items/garnet": 7.5,
+            "/items/sunstone": 1.0,
+            "/items/penetrating_strike": 0.75,
+            "/items/pestilent_shot": 0.75,
+            "/items/smoke_burst": 0.75,
+            "/items/acrobats_ribbon": 0.04,
+            "/items/magicians_cloth": 0.04,
+            "/items/sinister_cape": 0.04,
+            "/items/chaotic_chain": 0.02,
+            "/items/cursed_ball": 0.02,
+            "/items/sinister_chest_key": 0.02,
+            "/items/acrobatic_hood": 0.002,
+            "/items/magicians_hat": 0.002,
+            "/items/chaotic_flail": 0.0005,
+            "/items/cursed_bow": 0.0005
+        },
+        "/items/small_artisans_crate": {
+            "/items/coin": 11250.0,
+            "/items/cowbell": 0.265,
+            "/items/shard_of_protection": 1.875,
+            "/items/pearl": 0.2,
+            "/items/amber": 0.1333,
+            "/items/garnet": 0.05,
+            "/items/jade": 0.05,
+            "/items/amethyst": 0.05
+        },
+        "/items/small_meteorite_cache": {
+            "/items/coin": 11250.0,
+            "/items/cowbell": 0.265,
+            "/items/star_fragment": 11.25
+        },
+        "/items/small_treasure_chest": {
+            "/items/coin": 11250.0,
+            "/items/cowbell": 0.265,
+            "/items/pearl": 0.6,
+            "/items/amber": 0.4,
+            "/items/garnet": 0.15,
+            "/items/jade": 0.15,
+            "/items/amethyst": 0.15
+        }
+    };
+
+    window.lootData = lootData;
 
     // ==================== 选择器配置 ====================
     const SELECTORS = {
@@ -604,6 +817,7 @@
     window.PGE = {
         core: null,
         debugModule: 'get-marketdata.js',
+        characterData: null,
 
         async checkAPI() {
             return {
@@ -719,6 +933,9 @@
                 ws.addEventListener("open", () => {
                     console.log('[PGE] WebSocket connected');
                     initializationState.wsConnected = true;
+                    window.PGE.hookMessage('init_character_data', (data) => {
+                        window.PGE.characterData = data;
+                    });
                     checkAndInitializeModules();
                 });
 
@@ -1499,6 +1716,14 @@
                         <span style="font-size: 12px; opacity: 0.8;">${LANG.settings.considerArtisanTea.description}</span>
                     </label>
                 </div>
+
+                <div class="custom-tab-option">
+                    <input type="checkbox" id="considerRareLoot" ${window.PGE_CONFIG?.considerRareLoot ? 'checked' : ''}>
+                    <label for="considerRareLoot">
+                        <strong>💎 ${LANG.settings.considerRareLoot.title}</strong><br>
+                        <span style="font-size: 12px; opacity: 0.8;">${LANG.settings.considerRareLoot.description}</span>
+                    </label>
+                </div>
                 
                 <div class="custom-tab-option">
                     <input type="checkbox" id="gatheringEnhanced" ${window.PGE_CONFIG?.gatheringEnhanced ? 'checked' : ''}>
@@ -1521,6 +1746,14 @@
                     <label for="autoClaimMarketListings">
                         <strong>🎁 ${LANG.settings.autoClaimMarketListings.title}</strong><br>
                         <span style="font-size: 12px; opacity: 0.8;">${LANG.settings.autoClaimMarketListings.description}</span>
+                    </label>
+                </div>
+
+                <div class="custom-tab-option">
+                    <input type="checkbox" id="itemValueCalculator" ${window.PGE_CONFIG?.itemValueCalculator ? 'checked' : ''}>
+                    <label for="itemValueCalculator">
+                        <strong>💰 物品价值计算器</strong><br>
+                        <span style="font-size: 12px; opacity: 0.8;">启用物品价值计算功能，强化物品使用实时价格</span>
                     </label>
                 </div>
                 
@@ -1549,6 +1782,16 @@
                     // 自动保存设置
                     if (window.saveConfig && window.PGE_CONFIG) {
                         window.saveConfig(window.PGE_CONFIG);
+                    }
+
+                    // 对于相关设置，立即更新计算器
+                    if (e.target.id === 'considerRareLoot') {
+                        if (window.MWIModules?.alchemyCalculator) {
+                            window.MWIModules.alchemyCalculator.updateProfitDisplay();
+                        }
+                        if (window.MWIModules?.universalCalculator) {
+                            window.MWIModules.universalCalculator.updateProfitDisplay();
+                        }
                     }
 
                     // 对于自动收集市场订单，立即生效
@@ -1597,6 +1840,8 @@
                 characterSwitcher: true,
                 considerArtisanTea: true,
                 autoClaimMarketListings: false,
+                considerRareLoot: false,
+                itemValueCalculator: true,
             };
 
             window.PGE_CONFIG = { ...defaultConfig };
@@ -2138,6 +2383,61 @@
         }
     }
 
+    // ==================== 添加稀有掉落物价值计算工具函数 ====================
+    const rareDropsCalculator = {
+        // 计算稀有掉落物价值
+        calculateRareDropValue(outputItemHrid, orderBooks) {
+            if (!window.PGE_CONFIG.considerRareLoot) return 0;
+
+            const lootDrops = lootData[outputItemHrid];
+            if (!lootDrops) return 0;
+
+            let totalValue = 0;
+
+            for (const [itemHrid, quantity] of Object.entries(lootDrops)) {
+                let price = 0;
+
+                if (itemHrid === '/items/coin') {
+                    price = 1; // 金币价格固定为1
+                } else if (itemHrid === '/items/cowbell') {
+                    // 牛铃价格为bag_of_10_cowbells的十分之一
+                    const bagOrderBooks = orderBooks['/items/bag_of_10_cowbells'];
+                    if (bagOrderBooks && bagOrderBooks[0]) {
+                        const bagPrice = bagOrderBooks[0].asks?.[0]?.price || 0;
+                        price = bagPrice / 10;
+                    }
+                } else {
+                    // 其他物品从市场数据获取价格
+                    const itemOrderBooks = orderBooks[itemHrid];
+                    if (itemOrderBooks && itemOrderBooks[0]) {
+                        price = itemOrderBooks[0].asks?.[0]?.price || 0;
+                    }
+                }
+
+                let itemValue = price * quantity;
+
+                // 除了coin外都要考虑税费
+                if (itemHrid !== '/items/coin') {
+                    itemValue *= 0.98;
+                }
+
+                totalValue += itemValue;
+            }
+
+            return totalValue;
+        },
+
+        // 获取稀有掉落物相关的物品列表
+        getRareDropItems(outputItemHrid) {
+            const lootDrops = lootData[outputItemHrid];
+            if (!lootDrops) return [];
+
+            return Object.keys(lootDrops).filter(itemHrid =>
+                itemHrid !== '/items/coin' && itemHrid !== '/items/cowbell'
+            );
+        }
+    };
+
     // ==================== 基础利润计算器类 ====================
     class BaseProfitCalculator {
         constructor(cacheExpiry = CONFIG.UNIVERSAL_CACHE_EXPIRY) {
@@ -2197,7 +2497,7 @@
             if (this.isProcessing || !this.requestQueue.length || !this.initialized || !window.PGE?.core) return;
             this.isProcessing = true;
             while (this.requestQueue.length > 0) {
-                const batch = this.requestQueue.splice(0, 2);
+                const batch = this.requestQueue.splice(0, 1);
                 await Promise.all(batch.map(async ({ itemHrid, resolve }) => {
                     if (this.marketData[itemHrid] && !utils.isCacheExpired(itemHrid, this.marketTimestamps, this.cacheExpiry)) {
                         return resolve(this.marketData[itemHrid]);
@@ -2218,7 +2518,7 @@
                         }, 50);
                     });
                 }));
-                if (this.requestQueue.length > 0) await utils.delay(100);
+                if (this.requestQueue.length > 0) await utils.delay(300);
             }
             this.isProcessing = false;
         }
@@ -2707,6 +3007,31 @@
                 data.catalyst[buyType === 'ask' ? 'asks' : 'bids'] === null;
         }
 
+        async getMarketDataForRareDrops(outputItems) {
+            if (!window.PGE_CONFIG.considerRareLoot) return {};
+
+            const marketData = {};
+            const itemsToFetch = new Set();
+
+            // 收集所有需要获取市场数据的物品
+            outputItems.forEach(output => {
+                const rareItems = rareDropsCalculator.getRareDropItems(output.itemHrid);
+                rareItems.forEach(item => itemsToFetch.add(item));
+            });
+
+            // 添加bag_of_10_cowbells用于计算cowbell价格
+            itemsToFetch.add('/items/bag_of_10_cowbells');
+
+            // 批量获取市场数据
+            const promises = Array.from(itemsToFetch).map(async (itemHrid) => {
+                const orderBooks = await this.getMarketData(itemHrid);
+                marketData[itemHrid] = orderBooks;
+            });
+
+            await Promise.all(promises);
+            return marketData;
+        }
+
         async getActionData() {
             try {
                 const successRate = this.getSuccessRate();
@@ -2731,15 +3056,21 @@
                     this.getDrinkCosts()
                 ]);
 
+                const validDrops = drops.filter(Boolean);
+
+                // 获取稀有掉落物市场数据
+                const rareDropsMarketData = await this.getMarketDataForRareDrops(validDrops);
+
                 return {
                     successRate,
                     timeCost,
                     efficiency: buffEffects.efficiency,
                     requirements: requirements.filter(Boolean),
-                    drops: drops.filter(Boolean),
+                    drops: validDrops,
                     catalyst: catalyst || { asks: 0.0, bids: 0.0 },
                     consumables: consumables.filter(Boolean),
-                    drinkCosts
+                    drinkCosts,
+                    rareDropsMarketData // 添加稀有掉落物市场数据
                 };
             } catch (error) {
                 console.error('获取行动数据失败:', error);
@@ -2767,18 +3098,27 @@
                     const price = sellType === 'ask' ? drop.asks : drop.bids;
                     let income;
 
-                    // 判断是否为最后两个掉落物（精华和稀有）
-                    const isLastTwoDrops = index >= data.drops.length - 2;
-                    if (isLastTwoDrops) {
-                        income = price * drop.dropRate * drop.count;
+                    // 判断是否为最后一个掉落物（稀有掉落物）
+                    const isLastDrop = index === data.drops.length - 1;
+                    if (isLastDrop && window.PGE_CONFIG.considerRareLoot) {
+                        // 如果是最后一个掉落物且开启了稀有掉落物设置，计算稀有掉落物价值
+                        const rareDropValue = rareDropsCalculator.calculateRareDropValue(drop.itemHrid, data.rareDropsMarketData);
+                        income = rareDropValue * drop.dropRate;
                     } else {
-                        income = price * drop.dropRate * drop.count * data.successRate;
+                        // 判断是否为倒数第二个掉落物（精华）
+                        const isSecondLastDrop = index === data.drops.length - 2;
+                        if (isSecondLastDrop) {
+                            income = price * drop.dropRate * drop.count;
+                        } else {
+                            income = price * drop.dropRate * drop.count * data.successRate;
+                        }
+
+                        // 应用市场税费
+                        if (drop.itemHrid !== '/items/coin') {
+                            income *= 0.98;
+                        }
                     }
 
-                    // 应用市场税费
-                    if (drop.itemHrid !== '/items/coin') {
-                        income *= 0.98;
-                    }
                     return sum + income;
                 }, 0.0);
 
@@ -2886,7 +3226,7 @@
         getStateFingerprint() {
             try {
                 const consumables = document.querySelectorAll('.ActionTypeConsumableSlots_consumableSlots__kFKk0 .Item_itemContainer__x7kH1');
-                const alchemyInfo = document.querySelector('.SkillActionDetail_info__3umoI').textContent
+                const alchemyInfo = document.querySelector('.SkillActionDetail_info__3umoI')?.textContent || '';
 
                 const consumablesState = Array.from(consumables).map(el =>
                     el.querySelector('svg use')?.getAttribute('href') || 'empty'
@@ -3230,6 +3570,31 @@
                 checkDrinks(data.drinkCosts || [], buyType === 'ask' ? 'asks' : 'bids');
         }
 
+        async getMarketDataForRareDrops(outputItems) {
+            if (!window.PGE_CONFIG.considerRareLoot) return {};
+
+            const marketData = {};
+            const itemsToFetch = new Set();
+
+            // 收集所有需要获取市场数据的物品
+            outputItems.forEach(output => {
+                const rareItems = rareDropsCalculator.getRareDropItems(output.itemHrid);
+                rareItems.forEach(item => itemsToFetch.add(item));
+            });
+
+            // 添加bag_of_10_cowbells用于计算cowbell价格
+            itemsToFetch.add('/items/bag_of_10_cowbells');
+
+            // 批量获取市场数据
+            const promises = Array.from(itemsToFetch).map(async (itemHrid) => {
+                const orderBooks = await this.getMarketData(itemHrid);
+                marketData[itemHrid] = orderBooks;
+            });
+
+            await Promise.all(promises);
+            return marketData;
+        }
+
         async getActionData() {
             const container = document.querySelector('.SkillActionDetail_regularComponent__3oCgr');
             if (!container) return null;
@@ -3248,6 +3613,10 @@
             ]);
 
             const actionTime = this.getActionTime();
+            const validDrops = drops.filter(Boolean);
+
+            // 获取稀有掉落物市场数据
+            const rareDropsMarketData = await this.getMarketDataForRareDrops(validDrops);
 
             return {
                 actionTime,
@@ -3255,8 +3624,9 @@
                 drinkCosts: buffData.drinkCosts,
                 requirements: requirements.filter(Boolean),
                 outputs: outputs.filter(Boolean),
-                drops: drops.filter(Boolean),
-                upgrades: upgrades.filter(Boolean)
+                drops: validDrops,
+                upgrades: upgrades.filter(Boolean),
+                rareDropsMarketData // 添加稀有掉落物市场数据
             };
         }
 
@@ -3292,13 +3662,25 @@
             });
 
             if (data.drops.length > 0) {
-                data.drops.forEach(item => {
+                data.drops.forEach((item, index) => {
                     const price = sellType === 'ask' ? item.asks : item.bids;
-                    const dropRate = this.parseDropRate(item.itemHrid) || 0.05;
-                    let income = price * (item.count || 1.0) * dropRate;
-                    if (item.itemHrid !== '/items/coin') {
-                        income *= 0.98; // 市场税费
+                    let income;
+
+                    // 判断是否为最后一个掉落物（稀有掉落物）
+                    const isLastDrop = index === data.drops.length - 1;
+                    if (isLastDrop && window.PGE_CONFIG.considerRareLoot) {
+                        // 如果是最后一个掉落物且开启了稀有掉落物设置，计算稀有掉落物价值
+                        const dropRate = this.parseDropRate(item.itemHrid) || 0.05;
+                        const rareDropValue = rareDropsCalculator.calculateRareDropValue(item.itemHrid, data.rareDropsMarketData);
+                        income = rareDropValue * dropRate;
+                    } else {
+                        const dropRate = this.parseDropRate(item.itemHrid) || 0.05;
+                        income = price * (item.count || 1.0) * dropRate;
+                        if (item.itemHrid !== '/items/coin') {
+                            income *= 0.98; // 市场税费
+                        }
                     }
+
                     totalIncome += income;
                 });
             }
@@ -3424,6 +3806,1539 @@
             if (currentState !== this.lastState) {
                 this.lastState = currentState;
                 this.debounceUpdate(() => this.updateProfitDisplay());
+            }
+        }
+    }
+
+    // ==================== 物品价值计算器 ====================
+    class ItemValueCalculator extends BaseProfitCalculator {
+        constructor() {
+            super(CONFIG.UNIVERSAL_CACHE_EXPIRY);
+            this.characterId = window.PGE?.characterData?.character.id;
+            this.jsonMarketData = null;
+            this.jsonDataTimestamp = 0;
+            this.jsonDataTTL = 300000; // 5分钟缓存
+            this.storageKey = `MWI_ITEM_VALUE_HISTORY_${this.characterId}`;
+            this.recordInterval = 30 * 1000; // 30分钟
+            this.maxHistoryDays = 30; // 最多保留30天
+            this.compressionThreshold = 7; // 7天后开始压缩
+            this.autoRecordTimer = null;
+            this.incrementButtonObserver = null;
+            this.chartViewer = null;
+            this.init();
+        }
+
+        async init() {
+            await super.init();
+            this.loadJsonMarketData();
+            this.startAutoRecord();
+            this.cleanupOldData();
+            this.setupIncrementButtonObserver(); // 添加按钮观察器
+            this.chartViewer = new AssetChartViewer(this);
+        }
+
+        // 获取本地时间
+        getLocalDateString(timestamp = null) {
+            const date = timestamp ? new Date(timestamp) : new Date();
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        }
+
+        // 获取今日增量
+        getTodayIncrement() {
+            const historyData = this.getHistoryData();
+            const today = this.getLocalDateString(); // 使用本地时区日期
+
+            // 筛选今天的记录
+            const todayRecords = historyData.filter(record => record.date === today);
+
+            if (todayRecords.length === 0) {
+                return { askIncrement: 0, bidIncrement: 0 };
+            }
+
+            // 按时间排序
+            todayRecords.sort((a, b) => a.timestamp - b.timestamp);
+
+            const firstRecord = todayRecords[0];
+            const lastRecord = todayRecords[todayRecords.length - 1];
+
+            const askIncrement = lastRecord.totalAsk - firstRecord.totalAsk;
+            const bidIncrement = lastRecord.totalBid - firstRecord.totalBid;
+
+            // 显示最近5天的记录概览
+            const recentDays = {};
+            historyData.forEach(record => {
+                if (!recentDays[record.date]) {
+                    recentDays[record.date] = [];
+                }
+                recentDays[record.date].push(record);
+            });
+
+            const sortedDays = Object.keys(recentDays).sort().slice(-5);
+            sortedDays.forEach(date => {
+                const dayRecords = recentDays[date];
+            });
+
+            return {
+                askIncrement,
+                bidIncrement
+            };
+        }
+
+        // 创建增量显示按钮
+        createIncrementButton() {
+            const button = document.createElement('button');
+            button.className = 'MuiButtonBase-root MuiTab-root MuiTab-textColorPrimary css-1q2h7u5';
+            button.setAttribute('tabindex', '-1');
+            button.setAttribute('type', 'button');
+            button.setAttribute('role', 'tab');
+            button.setAttribute('aria-selected', 'false');
+
+            const span = document.createElement('span');
+            span.className = 'MuiBadge-root TabsComponent_badge__1Du26 css-1rzb3uu';
+
+            const textSpan = document.createElement('span');
+
+            // 使用class而不是id，避免重复id问题
+            const askSpan = document.createElement('span');
+            askSpan.className = 'ask-increment';
+            askSpan.textContent = '0';
+
+            const separatorSpan = document.createElement('span');
+            separatorSpan.textContent = ' / ';
+            separatorSpan.style.color = 'rgba(255, 255, 255, 0.7)';
+
+            const bidSpan = document.createElement('span');
+            bidSpan.className = 'bid-increment';
+            bidSpan.textContent = '0';
+
+            textSpan.appendChild(askSpan);
+            textSpan.appendChild(separatorSpan);
+            textSpan.appendChild(bidSpan);
+
+            const badge = document.createElement('span');
+            badge.className = 'MuiBadge-badge MuiBadge-standard MuiBadge-invisible MuiBadge-anchorOriginTopRight MuiBadge-anchorOriginTopRightRectangular MuiBadge-overlapRectangular MuiBadge-colorWarning css-dpce5z';
+
+            span.appendChild(textSpan);
+            span.appendChild(badge);
+
+            const ripple = document.createElement('span');
+            ripple.className = 'MuiTouchRipple-root css-w0pj6f';
+
+            button.appendChild(span);
+            button.appendChild(ripple);
+
+            button.addEventListener('click', (e) => {
+                e.preventDefault();
+
+                if (this.chartViewer) {
+                    this.chartViewer.show();
+                }
+                this.updateIncrementDisplay();
+            });
+
+            button.addEventListener('mouseenter', () => {
+                button.style.backgroundColor = 'rgba(255, 255, 255, 0.04)';
+            });
+
+            button.addEventListener('mouseleave', () => {
+                button.style.backgroundColor = '';
+            });
+
+            return button;
+        }
+
+        // 更新增量显示
+        updateIncrementDisplay() {
+            const { askIncrement, bidIncrement } = this.getTodayIncrement();
+
+            // 查找所有增量按钮并更新（最多2个）
+            const buttons = document.querySelectorAll('[id^="value-increment-button"]');
+
+            buttons.forEach((button, index) => {
+                const askSpan = button.querySelector('#ask-increment') || button.querySelector('.ask-increment');
+                const bidSpan = button.querySelector('#bid-increment') || button.querySelector('.bid-increment');
+
+                if (askSpan && bidSpan) {
+                    const formattedAsk = utils.formatProfit(askIncrement);
+                    const formattedBid = utils.formatProfit(bidIncrement);
+
+                    askSpan.textContent = formattedAsk;
+                    bidSpan.textContent = formattedBid;
+
+                    // 设置颜色
+                    askSpan.style.color = askIncrement >= 0 ? '#4CAF50' : '#f44336';
+                    bidSpan.style.color = bidIncrement >= 0 ? '#4CAF50' : '#f44336';
+
+                    if (askIncrement === 0) {
+                        askSpan.style.color = 'rgba(255, 255, 255, 0.7)';
+                    }
+                    if (bidIncrement === 0) {
+                        bidSpan.style.color = 'rgba(255, 255, 255, 0.7)';
+                    }
+                }
+            });
+        }
+
+        // 设置按钮插入观察器
+        setupIncrementButtonObserver() {
+            this.incrementButtonObserver = new MutationObserver(() => {
+                this.insertIncrementButton();
+            });
+
+            this.incrementButtonObserver.observe(document.body, {
+                childList: true,
+                subtree: true
+            });
+
+            // 立即尝试插入一次
+            setTimeout(() => {
+                this.insertIncrementButton();
+            }, 1000);
+        }
+
+        // 插入增量按钮
+        insertIncrementButton() {
+            const targetContainers = document.querySelectorAll('.CharacterManagement_characterManagement__2PhvW .css-k008qs');
+
+            // 限制最多处理2个容器
+            const maxContainers = Math.min(targetContainers.length, 2);
+            let insertedAny = false;
+
+            for (let i = 0; i < maxContainers; i++) {
+                const targetContainer = targetContainers[i];
+
+                // 检查这个容器是否已经有按钮（任何增量按钮都算）
+                const hasButton = targetContainer.querySelector('[id^="value-increment-button"]');
+
+                if (!hasButton) {
+                    const buttonId = `value-increment-button-${i}`;
+                    const button = this.createIncrementButton();
+                    button.id = buttonId;
+
+                    targetContainer.appendChild(button);
+                    insertedAny = true;
+                }
+            }
+
+            // 只有在插入了新按钮时才更新显示和设置定时器
+            if (insertedAny) {
+                this.updateIncrementDisplay();
+                this.setupIncrementUpdateTimer();
+            }
+        }
+
+        // 设置定时更新增量显示
+        setupIncrementUpdateTimer() {
+            // 如果已经有定时器就不再创建
+            if (this.updateTimer) {
+                return;
+            }
+
+            this.updateTimer = setInterval(() => {
+                const buttons = document.querySelectorAll('[id^="value-increment-button"]');
+                if (buttons.length > 0) {
+                    this.updateIncrementDisplay();
+                } else {
+                    clearInterval(this.updateTimer);
+                    this.updateTimer = null;
+                }
+            }, 60000); // 1分钟
+        }
+
+        //添加新数据后更新按钮显示
+        addValueRecord(totalAsk, totalBid) {
+            const now = Date.now();
+            const historyData = this.getHistoryData();
+
+            const newRecord = {
+                timestamp: now,
+                totalAsk,
+                totalBid,
+                date: this.getLocalDateString(now), // 使用本地时区日期
+                time: new Date(now).toLocaleString('zh-CN') // 年月日小时分钟
+            };
+
+            // 添加新记录
+            historyData.push(newRecord);
+
+            // 压缩和清理数据
+            const compressedData = this.compressHistoryData(historyData);
+            this.saveHistoryData(compressedData);
+
+            // 更新按钮显示
+            setTimeout(() => {
+                this.updateIncrementDisplay();
+            }, 100);
+        }
+
+        // 数据存储管理
+        getHistoryData() {
+            try {
+                const data = localStorage.getItem(this.storageKey);
+                return data ? JSON.parse(data) : [];
+            } catch (error) {
+                console.error('获取历史数据失败:', error);
+                return [];
+            }
+        }
+
+        saveHistoryData(data) {
+            try {
+                localStorage.setItem(this.storageKey, JSON.stringify(data));
+            } catch (error) {
+                console.error('保存历史数据失败:', error);
+            }
+        }
+
+        compressHistoryData(data) {
+            const now = Date.now();
+            const compressionDate = now - this.compressionThreshold * 24 * 60 * 60 * 1000;
+            const maxDate = now - this.maxHistoryDays * 24 * 60 * 60 * 1000;
+
+            // 分离需要压缩的数据和保留的数据
+            const recentData = data.filter(record => record.timestamp > compressionDate);
+            const oldData = data.filter(record => record.timestamp <= compressionDate && record.timestamp > maxDate);
+
+            // 对旧数据按日期分组
+            const dailyGroups = {};
+            oldData.forEach(record => {
+                const date = record.date;
+                if (!dailyGroups[date]) {
+                    dailyGroups[date] = [];
+                }
+                dailyGroups[date].push(record);
+            });
+
+            // 每天只保留最早和最晚的记录
+            const compressedOldData = [];
+            Object.values(dailyGroups).forEach(dayRecords => {
+                dayRecords.sort((a, b) => a.timestamp - b.timestamp);
+                compressedOldData.push(dayRecords[0]); // 最早的记录
+                if (dayRecords.length > 1) {
+                    compressedOldData.push(dayRecords[dayRecords.length - 1]); // 最晚的记录
+                }
+            });
+
+            // 合并并按时间排序
+            const result = [...compressedOldData, ...recentData];
+            result.sort((a, b) => a.timestamp - b.timestamp);
+
+            return result;
+        }
+
+        cleanupOldData() {
+            const historyData = this.getHistoryData();
+            const maxDate = Date.now() - this.maxHistoryDays * 24 * 60 * 60 * 1000;
+
+            const filteredData = historyData.filter(record => record.timestamp > maxDate);
+
+            if (filteredData.length < historyData.length) {
+                this.saveHistoryData(filteredData);
+            }
+        }
+
+        startAutoRecord() {
+            // 清除之前的定时器
+            if (this.autoRecordTimer) {
+                clearInterval(this.autoRecordTimer);
+            }
+
+            // 设置定时器，每30分钟记录一次
+            this.autoRecordTimer = setInterval(async () => {
+                try {
+                    const result = await this.calculateItemValues();
+                    if (result) {
+                    }
+                } catch (error) {
+                    console.error('[ItemValueCalculator] 自动记录失败:', error);
+                }
+            }, this.recordInterval);
+        }
+
+        stopAutoRecord() {
+            if (this.autoRecordTimer) {
+                clearInterval(this.autoRecordTimer);
+                this.autoRecordTimer = null;
+            }
+        }
+
+        // 获取JSON市场数据
+        async loadJsonMarketData() {
+            try {
+                const response = await fetch('https://raw.githubusercontent.com/holychikenz/MWIApi/main/milkyapi.json');
+                if (!response.ok) {
+                    throw new Error(`HTTP错误: ${response.status}`);
+                }
+                const data = await response.json();
+                this.jsonMarketData = data.market || data;
+                this.jsonDataTimestamp = Date.now();
+            } catch (error) {
+                console.error('获取JSON市场数据失败:', error);
+            }
+        }
+
+        // 检查JSON数据是否过期
+        isJsonDataExpired() {
+            return !this.jsonMarketData || Date.now() - this.jsonDataTimestamp > this.jsonDataTTL;
+        }
+
+        // 获取物品价格（根据强化等级决定数据源）
+        async getItemPrice(itemHrid, enhancementLevel = 0) {
+            // 特殊处理金币
+            if (itemHrid === '/items/coin') {
+                return { ask: 1, bid: 1 };
+            }
+
+            // 特殊处理牛铃
+            if (itemHrid === '/items/cowbell') {
+                return await this.getCowbellPrice(enhancementLevel);
+            }
+
+            // 根据强化等级决定数据源
+            if (enhancementLevel > 0) {
+                // 强化等级不为0时，使用WebSocket获取价格
+                return await this.getWebSocketPrice(itemHrid, enhancementLevel);
+            } else {
+                // 强化等级为0时，使用JSON价格
+                return await this.getJsonPrice(itemHrid);
+            }
+        }
+
+        // 通过WebSocket获取价格
+        async getWebSocketPrice(itemHrid, enhancementLevel) {
+            try {
+                const orderBooks = await this.getMarketData(itemHrid);
+                if (orderBooks?.[enhancementLevel]) {
+                    const { asks: asksList, bids: bidsList } = orderBooks[enhancementLevel];
+                    return {
+                        ask: asksList?.[0]?.price || 0,
+                        bid: bidsList?.[0]?.price || 0
+                    };
+                }
+                return { ask: 0, bid: 0 };
+            } catch (error) {
+                console.error('WebSocket获取价格失败:', error);
+                return { ask: 0, bid: 0 };
+            }
+        }
+
+        // 通过JSON获取价格
+        async getJsonPrice(itemHrid) {
+            if (this.isJsonDataExpired()) {
+                await this.loadJsonMarketData();
+            }
+
+            if (!this.jsonMarketData) {
+                return { ask: 0, bid: 0 };
+            }
+
+            const itemName = this.extractItemName(itemHrid);
+            const marketItem = this.jsonMarketData[itemName];
+
+            if (!marketItem) {
+                return { ask: 0, bid: 0 };
+            }
+
+            return {
+                ask: marketItem.ask === -1 ? 0 : (marketItem.ask || 0),
+                bid: marketItem.bid === -1 ? 0 : (marketItem.bid || 0)
+            };
+        }
+
+        // 获取牛铃价格
+        async getCowbellPrice(enhancementLevel) {
+            const bagOfCowbellsName = 'Bag Of 10 Cowbells';
+
+            if (enhancementLevel > 0) {
+                // 强化牛铃通过WebSocket获取
+                const bagPrice = await this.getWebSocketPrice('/items/bag_of_10_cowbells', enhancementLevel);
+                return {
+                    ask: bagPrice.ask / 10,
+                    bid: bagPrice.bid / 10
+                };
+            } else {
+                // 普通牛铃通过JSON获取
+                if (this.isJsonDataExpired()) {
+                    await this.loadJsonMarketData();
+                }
+
+                const bagMarketItem = this.jsonMarketData?.[bagOfCowbellsName];
+                if (bagMarketItem) {
+                    return {
+                        ask: (bagMarketItem.ask === -1 ? 0 : (bagMarketItem.ask || 0)) / 10,
+                        bid: (bagMarketItem.bid === -1 ? 0 : (bagMarketItem.bid || 0)) / 10
+                    };
+                }
+                return { ask: 0, bid: 0 };
+            }
+        }
+
+        // 从itemHrid提取物品名称
+        extractItemName(itemHrid) {
+            if (typeof itemHrid !== 'string') return '';
+            return itemHrid.replace('/items/', '')
+                .replace(/_/g, ' ')
+                .replace(/\b\w/g, l => l.toUpperCase());
+        }
+
+        // 计算宝箱loot价值
+        async calculateChestLootValue(itemHrid, enhancementLevel = 0) {
+            const lootDrops = lootData[itemHrid];
+            if (!lootDrops) return { ask: 0, bid: 0 };
+
+            let totalAskValue = 0;
+            let totalBidValue = 0;
+
+            // 获取所有loot物品的价格
+            const lootItems = Object.keys(lootDrops);
+            const pricePromises = lootItems.map(async (lootItemHrid) => {
+                const quantity = lootDrops[lootItemHrid];
+                const prices = await this.getItemPrice(lootItemHrid, enhancementLevel);
+                return {
+                    itemHrid: lootItemHrid,
+                    quantity,
+                    prices
+                };
+            });
+
+            const lootPrices = await Promise.all(pricePromises);
+
+            // 计算总价值
+            lootPrices.forEach(({ quantity, prices }) => {
+                totalAskValue += prices.ask * quantity;
+                totalBidValue += prices.bid * quantity;
+            });
+
+            return {
+                ask: totalAskValue,
+                bid: totalBidValue
+            };
+        }
+
+        // 检查物品是否是宝箱
+        isChestItem(itemHrid) {
+            return lootData.hasOwnProperty(itemHrid);
+        }
+
+        // 获取角色物品数据
+        getCharacterItemMap() {
+            try {
+                const headerElement = document.querySelector('.MarketplacePanel_coinStack__1l0UD');
+                if (!headerElement) {
+                    throw new Error('未找到头部元素');
+                }
+
+                const reactKey = Object.keys(headerElement).find(key => key.startsWith('__reactProps'));
+                const characterItemMap = headerElement[reactKey]?.children?._owner?.memoizedProps?.characterItemMap;
+
+                if (!characterItemMap) {
+                    throw new Error('未找到物品数据');
+                }
+
+                return characterItemMap;
+            } catch (error) {
+                console.error('获取物品数据失败:', error);
+                return null;
+            }
+        }
+
+        // 获取市场订单数据
+        getMyMarketListingMap() {
+            try {
+                const headerElement = document.querySelector('.MarketplacePanel_coinStack__1l0UD');
+                if (!headerElement) {
+                    return null;
+                }
+
+                const reactKey = Object.keys(headerElement).find(key => key.startsWith('__reactProps'));
+                const myMarketListingMap = headerElement[reactKey]?.children?._owner?.memoizedProps?.myMarketListingMap;
+
+                return myMarketListingMap || null;
+            } catch (error) {
+                console.error('获取市场订单数据失败:', error);
+                return null;
+            }
+        }
+
+        // 计算单个物品价值
+        async calculateSingleItem(item) {
+            if (!item || !item.itemHrid || !item.count) return null;
+
+            const itemName = this.extractItemName(item.itemHrid);
+            const count = item.count;
+            const enhancementLevel = item.enhancementLevel || 0;
+
+            // 检查是否是宝箱
+            if (this.isChestItem(item.itemHrid)) {
+                const lootValue = await this.calculateChestLootValue(item.itemHrid, enhancementLevel);
+                return {
+                    itemName,
+                    count,
+                    enhancementLevel,
+                    askPrice: lootValue.ask,
+                    bidPrice: lootValue.bid,
+                    totalAsk: lootValue.ask * count,
+                    totalBid: lootValue.bid * count,
+                    isChest: true
+                };
+            } else {
+                // 普通物品
+                const prices = await this.getItemPrice(item.itemHrid, enhancementLevel);
+                return {
+                    itemName,
+                    count,
+                    enhancementLevel,
+                    askPrice: prices.ask,
+                    bidPrice: prices.bid,
+                    totalAsk: prices.ask * count,
+                    totalBid: prices.bid * count,
+                    isChest: false
+                };
+            }
+        }
+
+        // 计算市场订单价值
+        async calculateMarketOrderValue(order) {
+            if (!order || !order.itemHrid) return null;
+
+            const itemName = this.extractItemName(order.itemHrid);
+            const quantity = order.orderQuantity - order.filledQuantity;
+            const enhancementLevel = order.enhancementLevel || 0;
+            const price = order.price || 0;
+
+            if (quantity <= 0) return null;
+
+            if (!order.isSell) {
+                // 购买订单：投入的金币
+                const coinValue = quantity * price;
+                return {
+                    type: 'buy_order',
+                    itemName,
+                    quantity,
+                    enhancementLevel,
+                    price,
+                    coinValue,
+                    totalAsk: coinValue,
+                    totalBid: coinValue
+                };
+            } else {
+                // 出售订单：按市场价格计算物品价值
+                let prices;
+                if (this.isChestItem(order.itemHrid)) {
+                    prices = await this.calculateChestLootValue(order.itemHrid, enhancementLevel);
+                } else {
+                    prices = await this.getItemPrice(order.itemHrid, enhancementLevel);
+                }
+
+                return {
+                    type: 'sell_order',
+                    itemName,
+                    quantity,
+                    enhancementLevel,
+                    price,
+                    askPrice: prices.ask,
+                    bidPrice: prices.bid,
+                    totalAsk: prices.ask * quantity,
+                    totalBid: prices.bid * quantity
+                };
+            }
+        }
+
+        // 主计算函数
+        async calculateItemValues() {
+            try {
+                const characterItemMap = this.getCharacterItemMap();
+                if (!characterItemMap) {
+                    throw new Error('无法获取物品数据，请确保在正确的游戏界面');
+                }
+
+                const myMarketListingMap = this.getMyMarketListingMap();
+
+                let totalAskValue = 0;
+                let totalBidValue = 0;
+
+                // 遍历库存物品
+                const itemEntries = characterItemMap instanceof Map ?
+                    Array.from(characterItemMap.entries()) :
+                    Object.entries(characterItemMap);
+
+                for (const [key, item] of itemEntries) {
+                    const result = await this.calculateSingleItem(item);
+                    if (result) {
+                        totalAskValue += result.totalAsk;
+                        totalBidValue += result.totalBid;
+                    }
+                }
+
+                // 处理市场订单
+                if (myMarketListingMap) {
+                    const orderEntries = myMarketListingMap instanceof Map ?
+                        Array.from(myMarketListingMap.entries()) :
+                        Object.entries(myMarketListingMap);
+
+                    for (const [key, order] of orderEntries) {
+                        const result = await this.calculateMarketOrderValue(order);
+                        if (result) {
+                            totalAskValue += result.totalAsk;
+                            totalBidValue += result.totalBid;
+                        }
+                    }
+                }
+
+                // 记录数据到历史
+                this.addValueRecord(totalAskValue, totalBidValue);
+
+                return {
+                    totalAsk: totalAskValue,
+                    totalBid: totalBidValue
+                };
+
+            } catch (error) {
+                console.error('❌ 计算失败:', error.message);
+                throw error;
+            }
+        }
+
+        // 必需的抽象方法实现（继承自BaseProfitCalculator）
+        getContainerId() { return 'item-value-calculator'; }
+        getPessimisticId() { return 'item-value-pessimistic'; }
+        getOptimisticId() { return 'item-value-optimistic'; }
+        getWaitingText() { return '计算中...'; }
+        getActionData() { return null; }
+        calculateProfit() { return null; }
+        getStateFingerprint() { return ''; }
+        setupUI() { }
+
+        // 清理资源
+        cleanup() {
+            this.stopAutoRecord();
+
+            if (this.incrementButtonObserver) {
+                this.incrementButtonObserver.disconnect();
+                this.incrementButtonObserver = null;
+            }
+
+            if (this.chartViewer) {
+                this.chartViewer.hide();
+                this.chartViewer = null;
+            }
+
+            // 清理按钮
+            const button = document.getElementById('value-increment-button');
+            if (button) {
+                button.remove();
+            }
+        }
+    }
+
+    // ==================== 资产变化图表查看器 ====================
+    class AssetChartViewer {
+        constructor(itemValueCalculator) {
+            this.calculator = itemValueCalculator;
+            this.chartContainer = null;
+            this.myChart = null;
+            this.isVisible = false;
+            this.selectedDays = 7;
+            this.chartData = null;
+            this.isMobile = this.isMobileDevice();
+
+            // 图表配置
+            this.chartConfig = {
+                colors: {
+                    ask: 'rgba(255, 99, 132, 1)',
+                    bid: 'rgba(54, 162, 235, 1)',
+                    ma: 'rgba(75, 192, 192, 1)',
+                    trend: 'rgba(255, 159, 64, 1)'
+                },
+                backgroundColor: '#191c2b',
+                textColor: '#FFFFFF',
+                gridColor: 'rgba(255,255,255,0.2)'
+            };
+
+            // 数据集显示状态
+            this.datasetVisibility = this.loadDatasetVisibility();
+
+            this.init();
+        }
+
+        // 检测是否为移动设备
+        isMobileDevice() {
+            const ua = navigator.userAgent || navigator.vendor || window.opera;
+            const mobileUA = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(ua);
+            const aspectRatio = window.innerHeight / window.innerWidth;
+            return mobileUA || (aspectRatio >= 1.2);
+        }
+
+        // 加载图例显示状态
+        loadDatasetVisibility() {
+            const defaultVisibility = { ask: true, bid: false, ma: false, trend: false };
+            try {
+                const saved = JSON.parse(localStorage.getItem('MWI_AssetChart_DatasetVisibility'));
+                return Object.assign(defaultVisibility, saved);
+            } catch (e) {
+                return defaultVisibility;
+            }
+        }
+
+        // 保存图例显示状态
+        saveDatasetVisibility(visibility) {
+            localStorage.setItem('MWI_AssetChart_DatasetVisibility', JSON.stringify(visibility));
+        }
+
+        // 保存/加载时间范围设置
+        loadRangeSetting() {
+            return localStorage.getItem('MWI_AssetChart_Range') || '7';
+        }
+
+        saveRangeSetting(range) {
+            localStorage.setItem('MWI_AssetChart_Range', range);
+        }
+
+        init() {
+            this.addStyles();
+            this.createChartContainer();
+            this.bindEvents();
+
+            // 加载Chart.js（如果没有的话）
+            this.loadChartJS();
+        }
+
+        // 加载Chart.js库
+        loadChartJS() {
+            if (typeof Chart !== 'undefined') {
+                return;
+            }
+
+            const script = document.createElement('script');
+            script.src = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js';
+            script.onload = () => {
+            };
+            document.head.appendChild(script);
+
+            // 加载日期适配器
+            const dateAdapter = document.createElement('script');
+            dateAdapter.src = 'https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js';
+            document.head.appendChild(dateAdapter);
+        }
+
+        // 添加样式
+        addStyles() {
+            const style = document.createElement('style');
+
+            let modalStyles = `
+            .asset-chart-modal {
+                display: none;
+                position: fixed;
+                z-index: 10000;
+                left: 0;
+                top: 0;
+                width: 100%;
+                height: 100%;
+                overflow: auto;
+                background-color: rgba(0,0,0,0.8);
+                backdrop-filter: blur(5px);
+                align-items: center;
+                justify-content: center;
+            }
+            
+            .asset-chart-modal-content {
+                background-color: #191c2b;
+                color: #FFFFFF;
+                padding: 20px;
+                border: 1px solid #444;
+                border-radius: 8px;
+                width: 90%;
+                max-width: 1200px;
+                height: 80%;
+                max-height: 800px;
+                position: relative;
+                display: flex;
+                flex-direction: column;
+                box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+            }
+            
+            .asset-chart-header {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                margin-bottom: 20px;
+                padding-bottom: 10px;
+                border-bottom: 1px solid #444;
+            }
+            
+            .asset-chart-title {
+                font-size: 24px;
+                font-weight: bold;
+                margin: 0;
+            }
+            
+            .asset-chart-controls {
+                display: flex;
+                gap: 15px;
+                align-items: center;
+                margin-bottom: 20px;
+                flex-wrap: wrap;
+            }
+            
+            .asset-chart-time-range {
+                display: flex;
+                gap: 8px;
+                align-items: center;
+            }
+            
+            .asset-chart-time-btn {
+                padding: 8px 16px;
+                background-color: rgba(255, 255, 255, 0.1);
+                color: #FFFFFF;
+                border: 1px solid rgba(255, 255, 255, 0.3);
+                border-radius: 4px;
+                cursor: pointer;
+                font-size: 12px;
+                transition: all 0.2s;
+            }
+            
+            .asset-chart-time-btn:hover {
+                background-color: rgba(255, 255, 255, 0.2);
+            }
+            
+            .asset-chart-time-btn.active {
+                background-color: rgba(33, 150, 243, 0.8);
+                border-color: rgba(33, 150, 243, 1);
+            }
+            
+            .asset-chart-canvas-container {
+                flex: 1;
+                position: relative;
+                min-height: 0;
+            }
+            
+            .asset-chart-canvas {
+                background-color: #191c2b;
+                border-radius: 4px;
+                width: 100% !important;
+                height: 100% !important;
+            }
+            
+            .asset-chart-close-btn {
+                position: absolute;
+                top: 15px;
+                right: 15px;
+                background: transparent;
+                border: none;
+                color: #FFFFFF;
+                font-size: 24px;
+                cursor: pointer;
+                padding: 5px;
+                border-radius: 50%;
+                transition: background-color 0.2s;
+                z-index: 10001;
+            }
+            
+            .asset-chart-close-btn:hover {
+                background-color: rgba(255, 255, 255, 0.1);
+            }
+            
+            .asset-chart-info-panel {
+                display: flex;
+                gap: 20px;
+                padding: 10px;
+                background-color: rgba(0, 0, 0, 0.3);
+                border-radius: 4px;
+                margin-top: 10px;
+                font-size: 14px;
+                min-height: 40px;
+                align-items: center;
+            }
+        `;
+
+            // 移动端样式
+            if (this.isMobile) {
+                modalStyles += `
+                .asset-chart-modal-content.mobile {
+                    width: 100vh;
+                    height: 100vw;
+                    max-width: none;
+                    max-height: none;
+                    padding: 15px;
+                    transform: rotate(90deg) translate(0, -100%);
+                    transform-origin: top left;
+                    position: absolute;
+                    top: 0;
+                    left: 0;
+                }
+                
+                .asset-chart-close-btn {
+                    position: absolute;
+                    top: 10px;
+                    right: 10px;
+                    font-size: 28px;
+                    z-index: 10001;
+                }
+                
+                .asset-chart-controls {
+                    flex-direction: column;
+                    gap: 10px;
+                }
+                
+                .asset-chart-time-range {
+                    justify-content: center;
+                }
+                
+                .asset-chart-title {
+                    font-size: 20px;
+                }
+            `;
+            }
+
+            style.textContent = modalStyles;
+            document.head.appendChild(style);
+        }
+
+        createChartContainer() {
+            // 创建主容器
+            this.chartContainer = document.createElement('div');
+            this.chartContainer.id = 'asset-chart-modal';
+            this.chartContainer.className = 'asset-chart-modal';
+            this.chartContainer.style.display = 'none';
+
+            // 创建模态框内容
+            const modalContent = document.createElement('div');
+            modalContent.className = 'asset-chart-modal-content';
+            if (this.isMobile) {
+                modalContent.classList.add('mobile');
+            }
+
+            // 创建关闭按钮
+            const closeBtn = document.createElement('button');
+            closeBtn.className = 'asset-chart-close-btn';
+            closeBtn.textContent = '✕';
+            closeBtn.addEventListener('click', () => this.hide());
+
+            // 创建标题栏
+            const header = document.createElement('div');
+            header.className = 'asset-chart-header';
+
+            const title = document.createElement('h2');
+            title.className = 'asset-chart-title';
+            title.textContent = '资产变化趋势';
+
+            header.appendChild(title);
+
+            // 创建控制面板
+            const controls = document.createElement('div');
+            controls.className = 'asset-chart-controls';
+
+            // 时间范围选择
+            const timeRangeContainer = document.createElement('div');
+            timeRangeContainer.className = 'asset-chart-time-range';
+
+            const timeRangeLabel = document.createElement('span');
+            timeRangeLabel.textContent = '时间范围：';
+            timeRangeLabel.style.fontWeight = 'bold';
+
+            const timeRangeButtons = [
+                { label: '1天', value: 1 },
+                { label: '3天', value: 3 },
+                { label: '7天', value: 7 },
+                { label: '14天', value: 14 },
+                { label: '30天', value: 30 }
+            ];
+
+            timeRangeContainer.appendChild(timeRangeLabel);
+
+            timeRangeButtons.forEach(btn => {
+                const button = document.createElement('button');
+                button.className = 'asset-chart-time-btn';
+                button.textContent = btn.label;
+                button.dataset.value = btn.value;
+
+                if (btn.value === this.selectedDays) {
+                    button.classList.add('active');
+                }
+
+                button.addEventListener('click', () => {
+                    this.selectedDays = btn.value;
+                    this.saveRangeSetting(btn.value.toString());
+                    this.updateTimeRangeButtons();
+                    this.updateChart();
+                });
+
+                timeRangeContainer.appendChild(button);
+            });
+
+            controls.appendChild(timeRangeContainer);
+
+            // 创建图表容器
+            const canvasContainer = document.createElement('div');
+            canvasContainer.className = 'asset-chart-canvas-container';
+
+            const canvas = document.createElement('canvas');
+            canvas.id = 'asset-chart-canvas';
+            canvas.className = 'asset-chart-canvas';
+
+            canvasContainer.appendChild(canvas);
+
+            // 创建信息面板
+            const infoPanel = document.createElement('div');
+            infoPanel.className = 'asset-chart-info-panel';
+            infoPanel.id = 'asset-chart-info-panel';
+            infoPanel.innerHTML = '<span style="color: rgba(255, 255, 255, 0.7);">将鼠标悬停在图表上查看详细数据</span>';
+
+            // 组装界面
+            modalContent.appendChild(closeBtn);
+            modalContent.appendChild(header);
+            modalContent.appendChild(controls);
+            modalContent.appendChild(canvasContainer);
+            modalContent.appendChild(infoPanel);
+
+            this.chartContainer.appendChild(modalContent);
+            document.body.appendChild(this.chartContainer);
+
+            // 存储元素引用
+            this.elements = {
+                canvas: canvas,
+                infoPanel: infoPanel,
+                timeRangeButtons: timeRangeButtons
+            };
+        }
+
+        bindEvents() {
+            // 点击背景关闭
+            this.chartContainer.addEventListener('click', (e) => {
+                if (e.target === this.chartContainer) {
+                    this.hide();
+                }
+            });
+
+            // ESC键关闭
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape' && this.isVisible) {
+                    this.hide();
+                }
+            });
+
+            // 窗口大小变化
+            window.addEventListener('resize', () => {
+                if (this.isVisible && this.myChart) {
+                    this.myChart.resize();
+                }
+            });
+        }
+
+        show() {
+            this.isVisible = true;
+            this.chartContainer.style.display = 'flex';
+
+            // 加载保存的时间范围
+            this.selectedDays = parseInt(this.loadRangeSetting());
+            this.updateTimeRangeButtons();
+
+            // 等待Chart.js加载完成后更新图表
+            this.waitForChartJS().then(() => {
+                this.updateChart();
+            });
+        }
+
+        hide() {
+            this.isVisible = false;
+            this.chartContainer.style.display = 'none';
+            this.destroyChart();
+        }
+
+        // 等待Chart.js加载完成
+        waitForChartJS() {
+            return new Promise((resolve) => {
+                const checkChart = () => {
+                    if (typeof Chart !== 'undefined') {
+                        resolve();
+                    } else {
+                        setTimeout(checkChart, 100);
+                    }
+                };
+                checkChart();
+            });
+        }
+
+        destroyChart() {
+            if (this.myChart) {
+                this.myChart.destroy();
+                this.myChart = null;
+            }
+        }
+
+        updateTimeRangeButtons() {
+            const buttons = this.chartContainer.querySelectorAll('.asset-chart-time-btn');
+            buttons.forEach(button => {
+                const value = parseInt(button.dataset.value);
+                if (value === this.selectedDays) {
+                    button.classList.add('active');
+                } else {
+                    button.classList.remove('active');
+                }
+            });
+        }
+
+        // 准备图表数据
+        prepareChartData() {
+            const historyData = this.calculator.getHistoryData();
+            const now = Date.now();
+            const cutoffTime = now - (this.selectedDays * 24 * 60 * 60 * 1000);
+
+            // 过滤指定时间范围的数据
+            const filteredData = historyData.filter(record => record.timestamp >= cutoffTime);
+
+            if (filteredData.length === 0) {
+                this.chartData = null;
+                return;
+            }
+
+            // 按时间排序
+            filteredData.sort((a, b) => a.timestamp - b.timestamp);
+
+            // 数据清洗：去除异常值
+            const cleanedData = this.cleanData(filteredData);
+
+            this.chartData = {
+                points: cleanedData,
+                minTimestamp: Math.min(...cleanedData.map(p => p.timestamp)),
+                maxTimestamp: Math.max(...cleanedData.map(p => p.timestamp))
+            };
+        }
+
+        // 数据清洗函数
+        cleanData(data) {
+            const cleaned = [];
+            let prevAsk = null, prevBid = null;
+
+            data.forEach(point => {
+                let newAsk = point.totalAsk;
+                let newBid = point.totalBid;
+
+                // 检测异常值并替换
+                if (prevAsk && (newAsk > 2.5 * prevAsk || newAsk < 0.4 * prevAsk)) {
+                    newAsk = prevAsk;
+                }
+                if (prevBid && (newBid > 2.5 * prevBid || newBid < 0.4 * prevBid)) {
+                    newBid = prevBid;
+                }
+
+                cleaned.push({
+                    timestamp: point.timestamp,
+                    date: new Date(point.timestamp),
+                    totalAsk: newAsk,
+                    totalBid: newBid,
+                    dateStr: point.dateStr
+                });
+
+                prevAsk = newAsk;
+                prevBid = newBid;
+            });
+
+            return cleaned;
+        }
+
+        // 计算移动平均线
+        calculateMovingAverage(data, windowSize = 5) {
+            const maValues = [];
+
+            for (let i = 0; i < data.length; i++) {
+                if (i < windowSize - 1) {
+                    maValues.push(null);
+                } else {
+                    let sum = 0;
+                    for (let j = i - windowSize + 1; j <= i; j++) {
+                        sum += (data[j].totalAsk + data[j].totalBid) / 2;
+                    }
+                    maValues.push(sum / windowSize);
+                }
+            }
+
+            return maValues;
+        }
+
+        // 计算趋势线
+        calculateTrendline(data) {
+            const n = data.length;
+            if (n < 2) return null;
+
+            let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
+
+            data.forEach(point => {
+                const x = point.timestamp;
+                const y = (point.totalAsk + point.totalBid) / 2;
+                sumX += x;
+                sumY += y;
+                sumXY += x * y;
+                sumX2 += x * x;
+            });
+
+            const meanX = sumX / n;
+            const meanY = sumY / n;
+            const slope = (sumXY - n * meanX * meanY) / (sumX2 - n * meanX * meanX);
+            const intercept = meanY - slope * meanX;
+
+            return [
+                { x: data[0].timestamp, y: slope * data[0].timestamp + intercept },
+                { x: data[n - 1].timestamp, y: slope * data[n - 1].timestamp + intercept }
+            ];
+        }
+
+        updateChart() {
+            if (!this.elements.canvas) return;
+
+            // 准备数据
+            this.prepareChartData();
+
+            if (!this.chartData || this.chartData.points.length === 0) {
+                this.showNoDataMessage();
+                return;
+            }
+
+            const data = this.chartData.points;
+            const times = data.map(point => point.date);
+            const askPrices = data.map(point => point.totalAsk);
+            const bidPrices = data.map(point => point.totalBid);
+
+            // 计算移动平均线
+            const maValues = this.calculateMovingAverage(data);
+
+            // 计算趋势线
+            const trendlineData = this.calculateTrendline(data);
+
+            // 确定时间轴格式
+            let timeUnit, timeFormat;
+            if (this.selectedDays <= 3) {
+                timeUnit = 'hour';
+                timeFormat = 'HH:mm';
+            } else {
+                timeUnit = 'day';
+                timeFormat = 'MM/dd';
+            }
+
+            // 销毁旧图表
+            this.destroyChart();
+
+            // 创建新图表
+            const ctx = this.elements.canvas.getContext('2d');
+
+            this.myChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: times,
+                    datasets: [
+                        {
+                            label: 'Ask总值',
+                            data: askPrices,
+                            borderColor: this.chartConfig.colors.ask,
+                            backgroundColor: this.chartConfig.colors.ask + '20',
+                            fill: false,
+                            pointRadius: 2,
+                            pointHoverRadius: 4,
+                            tension: 0.1,
+                            hidden: !this.datasetVisibility.ask
+                        },
+                        {
+                            label: 'Bid总值',
+                            data: bidPrices,
+                            borderColor: this.chartConfig.colors.bid,
+                            backgroundColor: this.chartConfig.colors.bid + '20',
+                            fill: false,
+                            pointRadius: 2,
+                            pointHoverRadius: 4,
+                            tension: 0.1,
+                            hidden: !this.datasetVisibility.bid
+                        },
+                        {
+                            label: '移动平均线',
+                            data: maValues,
+                            borderColor: this.chartConfig.colors.ma,
+                            backgroundColor: this.chartConfig.colors.ma + '20',
+                            fill: false,
+                            pointRadius: 0,
+                            pointHoverRadius: 3,
+                            tension: 0.1,
+                            hidden: !this.datasetVisibility.ma
+                        },
+                        {
+                            label: '趋势线',
+                            data: trendlineData,
+                            borderColor: this.chartConfig.colors.trend,
+                            backgroundColor: this.chartConfig.colors.trend + '20',
+                            fill: false,
+                            borderDash: [5, 5],
+                            pointRadius: 0,
+                            pointHoverRadius: 0,
+                            tension: 0,
+                            hidden: !this.datasetVisibility.trend
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    backgroundColor: this.chartConfig.backgroundColor,
+                    plugins: {
+                        legend: {
+                            display: true,
+                            labels: {
+                                color: this.chartConfig.textColor,
+                                usePointStyle: true,
+                                padding: 20
+                            },
+                            onClick: (e, legendItem, legend) => {
+                                // 调用默认行为
+                                Chart.defaults.plugins.legend.onClick(e, legendItem, legend);
+
+                                // 保存新的可见性状态
+                                const chart = legend.chart;
+                                const newVisibility = {
+                                    ask: !chart.getDatasetMeta(0).hidden,
+                                    bid: !chart.getDatasetMeta(1).hidden,
+                                    ma: !chart.getDatasetMeta(2).hidden,
+                                    trend: !chart.getDatasetMeta(3).hidden
+                                };
+
+                                this.datasetVisibility = newVisibility;
+                                this.saveDatasetVisibility(newVisibility);
+                            }
+                        },
+                        tooltip: {
+                            mode: 'index',
+                            intersect: false,
+                            backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                            titleColor: this.chartConfig.textColor,
+                            bodyColor: this.chartConfig.textColor,
+                            borderColor: 'rgba(255, 255, 255, 0.3)',
+                            borderWidth: 1,
+                            callbacks: {
+                                label: (context) => {
+                                    const value = context.parsed.y;
+                                    return `${context.dataset.label}: ${this.formatAccurateValue(value)}`;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            type: 'time',
+                            time: {
+                                unit: timeUnit,
+                                tooltipFormat: timeFormat,
+                                displayFormats: {
+                                    hour: 'HH:mm',
+                                    day: 'MM/dd'
+                                }
+                            },
+                            grid: {
+                                color: this.chartConfig.gridColor
+                            },
+                            ticks: {
+                                color: this.chartConfig.textColor
+                            }
+                        },
+                        y: {
+                            grid: {
+                                color: this.chartConfig.gridColor
+                            },
+                            ticks: {
+                                color: this.chartConfig.textColor,
+                                callback: (value) => this.formatValue(value)
+                            }
+                        }
+                    },
+                    interaction: {
+                        mode: 'index',
+                        intersect: false
+                    },
+                    onHover: (event, activeElements) => {
+                        if (activeElements.length > 0) {
+                            const dataIndex = activeElements[0].index;
+                            const point = data[dataIndex];
+                            this.updateInfoPanel(point);
+                        } else {
+                            this.clearInfoPanel();
+                        }
+                    }
+                }
+            });
+        }
+
+        /**
+         * 格式化准确值（显示完整数值，添加千位分隔符）
+         */
+        formatAccurateValue(value) {
+            if (value === null || value === undefined || isNaN(value)) {
+                return '0';
+            }
+
+            // 将数值转换为整数（去掉小数点）
+            const intValue = Math.round(value);
+
+            // 添加千位分隔符
+            return intValue.toLocaleString();
+        }
+
+        showNoDataMessage() {
+            this.destroyChart();
+            const ctx = this.elements.canvas.getContext('2d');
+            ctx.fillStyle = this.chartConfig.textColor;
+            ctx.font = '16px Arial';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('暂无数据', this.elements.canvas.width / 2, this.elements.canvas.height / 2);
+        }
+
+        updateInfoPanel(point) {
+            const { askIncrement, bidIncrement } = this.calculator.getTodayIncrement();
+
+            // 计算Ask增量颜色
+            let askColor = '#4CAF50'; // 默认绿色（正数）
+            if (askIncrement < 0) {
+                askColor = '#f44336'; // 红色（负数）
+            } else if (askIncrement === 0) {
+                askColor = 'rgba(255, 255, 255, 0.7)'; // 中性色（零）
+            }
+
+            // 计算Bid增量颜色
+            let bidColor = '#4CAF50'; // 默认绿色（正数）
+            if (bidIncrement < 0) {
+                bidColor = '#f44336'; // 红色（负数）
+            } else if (bidIncrement === 0) {
+                bidColor = 'rgba(255, 255, 255, 0.7)'; // 中性色（零）
+            }
+
+            this.elements.infoPanel.innerHTML = `
+                <div style="display: flex; align-items: center; gap: 16px;">
+                    <div>
+                        <strong style="color: rgba(255, 255, 255, 0.9);">今日增量:</strong>
+                        <span style="color: ${askColor}; font-weight: bold; margin-left: 8px;">
+                            ${this.formatAccurateValue(askIncrement)}
+                        </span>
+                        <span style="color: rgba(255, 255, 255, 0.7); margin: 0 4px;">/</span>
+                        <span style="color: ${bidColor}; font-weight: bold;">
+                            ${this.formatAccurateValue(bidIncrement)}
+                        </span>
+                    </div>
+                </div>
+            `;
+        }
+
+        clearInfoPanel() {
+            this.elements.infoPanel.innerHTML = '<span style="color: rgba(255, 255, 255, 0.7);">将鼠标悬停在图表上查看详细数据</span>';
+        }
+
+        formatValue(value) {
+            if (Math.abs(value) >= 1e9) {
+                return (value / 1e9).toFixed(1) + 'B';
+            } else if (Math.abs(value) >= 1e6) {
+                return (value / 1e6).toFixed(1) + 'M';
+            } else if (Math.abs(value) >= 1e3) {
+                return (value / 1e3).toFixed(1) + 'K';
+            } else {
+                return value.toFixed(0);
             }
         }
     }
@@ -5489,6 +7404,15 @@
         window.MWIModules.api = new PGE();
 
         // 根据配置初始化功能模块
+        if (PGE_CONFIG.itemValueCalculator) {
+            const characterData = window.PGE?.characterData?.character;
+            if (characterData && characterData.gameMode === 'standard') {
+                window.MWIModules.itemValueCalculator = new ItemValueCalculator();
+            } else {
+                console.log(`[PGE] 物品价值计算器未启用：角色模式为 ${characterData?.gameMode || 'Unknown'}`);
+            }
+        }
+
         if (PGE_CONFIG.gatheringEnhanced) {
             window.MWIModules.autoStop = new AutoStopManager();
         }
