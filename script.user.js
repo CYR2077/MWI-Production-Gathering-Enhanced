@@ -3,7 +3,7 @@
 // @name:zh-CN   [银河奶牛]生产采集增强
 // @name:en      MWI Production & Gathering Enhanced
 // @namespace    http://tampermonkey.net/
-// @version      3.6.0
+// @version      3.6.1
 // @description  计算生产、强化、房屋所需材料并一键购买；显示今日资产增量，统计30天总资产生成走势图；计算生产与炼金实时利润；按照目标材料数量进行采集；快速切换角色；自动收集市场订单；功能支持自定义开关。
 // @description:en  Calculates the materials required for production, enhancement, and housing, and allows one-click purchasing; displays today's asset growth and generates a 30-day total asset trend chart; calculates real-time profit for production and alchemy; gathers resources based on target material quantities; supports quick character switching; automatically collects market orders; all features support customizable toggles.
 // @author       XIxixi297
@@ -154,7 +154,7 @@
             confirmBidSell: '确认右一卖出',
             startListing: '开始挂单',
             startInstantSell: '开始直售',
-            noMarketData: '无法获取市场数据',   
+            noMarketData: '无法获取市场数据',
             sellFailed: '出售失败',
             instantSellSuccess: '直售成功',
             instantSellFailed: '直售失败',
@@ -1553,7 +1553,7 @@
                 }
             ];
             this.versionInfo = {
-                current: "3.6.0", // 当前版本
+                current: "3.6.1", // 当前版本
                 latest: null,
                 updateTime: null,
                 changelog: null
@@ -4180,8 +4180,7 @@
             super(CONFIG.UNIVERSAL_CACHE_EXPIRY);
             this.characterId = window.PGE?.characterData?.character.id;
             this.jsonMarketData = null;
-            this.jsonDataTimestamp = 0;
-            this.jsonDataTTL = 300000; // 5分钟缓存
+            this.jsonStorageKey = `PGE_MARKET_DATA`;
             this.storageKey = `MWI_ITEM_VALUE_HISTORY_${this.characterId}`;
             this.recordInterval = 30 * 1000 * 60; // 30分钟
             this.maxHistoryDays = 30; // 最多保留30天
@@ -4194,12 +4193,66 @@
 
         async init() {
             await super.init();
-            this.loadJsonMarketData();
+            this.loadJsonMarketDataFromStorage();
             this.startAutoRecord();
             this.cleanupOldData();
-            this.setupIncrementButtonObserver(); // 添加按钮观察器
+            this.setupIncrementButtonObserver();
             this.chartViewer = new AssetChartViewer(this);
             await this.calculateItemValues();
+        }
+
+        // 从localStorage加载JSON数据
+        loadJsonMarketDataFromStorage() {
+            try {
+                const saved = localStorage.getItem(this.jsonStorageKey);
+                if (saved) {
+                    this.jsonMarketData = JSON.parse(saved);
+                    return true;
+                }
+            } catch (error) {
+                console.error('[ItemValueCalculator] 从localStorage加载JSON市场数据失败:', error);
+            }
+            return false;
+        }
+
+        // 保存JSON数据到localStorage
+        saveJsonMarketDataToStorage() {
+            try {
+                if (this.jsonMarketData) {
+                    localStorage.setItem(this.jsonStorageKey, JSON.stringify(this.jsonMarketData));
+                }
+            } catch (error) {
+                console.error('[ItemValueCalculator] 保存JSON市场数据到localStorage失败:', error);
+            }
+        }
+
+        // 获取JSON市场数据并更新localStorage
+        async updateJsonMarketData() {
+            try {
+                const response = await fetch('https://raw.githubusercontent.com/holychikenz/MWIApi/main/milkyapi.json');
+                if (!response.ok) {
+                    throw new Error(`HTTP错误: ${response.status}`);
+                }
+                const newData = await response.json();
+                const marketData = newData.market || newData;
+
+                if (!this.jsonMarketData) {
+                    this.jsonMarketData = marketData;
+                } else {
+                    let updatedCount = 0;
+                    for (const [itemName, itemData] of Object.entries(marketData)) {
+                        this.jsonMarketData[itemName] = itemData;
+                        updatedCount++;
+                    }
+                }
+
+                // 保存到localStorage
+                this.saveJsonMarketDataToStorage();
+                return true;
+            } catch (error) {
+                console.error('[ItemValueCalculator] 更新JSON市场数据失败:', error);
+                return false;
+            }
         }
 
         // 获取本地时间
@@ -4231,20 +4284,6 @@
 
             const askIncrement = lastRecord.totalAsk - firstRecord.totalAsk;
             const bidIncrement = lastRecord.totalBid - firstRecord.totalBid;
-
-            // 显示最近5天的记录概览
-            const recentDays = {};
-            historyData.forEach(record => {
-                if (!recentDays[record.date]) {
-                    recentDays[record.date] = [];
-                }
-                recentDays[record.date].push(record);
-            });
-
-            const sortedDays = Object.keys(recentDays).sort().slice(-5);
-            sortedDays.forEach(date => {
-                const dayRecords = recentDays[date];
-            });
 
             return {
                 askIncrement,
@@ -4516,6 +4555,7 @@
                 try {
                     const result = await this.calculateItemValues();
                     if (result) {
+                        console.log('[ItemValueCalculator] 自动记录完成');
                     }
                 } catch (error) {
                     console.error('[ItemValueCalculator] 自动记录失败:', error);
@@ -4530,27 +4570,7 @@
             }
         }
 
-        // 获取JSON市场数据
-        async loadJsonMarketData() {
-            try {
-                const response = await fetch('https://raw.githubusercontent.com/holychikenz/MWIApi/main/milkyapi.json');
-                if (!response.ok) {
-                    throw new Error(`HTTP错误: ${response.status}`);
-                }
-                const data = await response.json();
-                this.jsonMarketData = data.market || data;
-                this.jsonDataTimestamp = Date.now();
-            } catch (error) {
-                console.error('获取JSON市场数据失败:', error);
-            }
-        }
-
-        // 检查JSON数据是否过期
-        isJsonDataExpired() {
-            return !this.jsonMarketData || Date.now() - this.jsonDataTimestamp > this.jsonDataTTL;
-        }
-
-        // 获取物品价格（根据强化等级决定数据源）
+        // 获取物品价格
         async getItemPrice(itemHrid, enhancementLevel = 0) {
             // 特殊处理金币
             if (itemHrid === '/items/coin') {
@@ -4562,14 +4582,19 @@
                 return await this.getCowbellPrice();
             }
 
-            // 根据强化等级决定数据源
             if (enhancementLevel > 0) {
-                // 强化等级不为0时，使用WebSocket获取价格
                 return await this.getWebSocketPrice(itemHrid, enhancementLevel);
             } else {
-                // 强化等级为0时，使用JSON价格
                 return await this.getJsonPrice(itemHrid);
             }
+        }
+
+        // 安全处理价格，将异常值转换为0
+        safePrice(price) {
+            if (price == null || isNaN(price)) {
+                return 0;
+            }
+            return Math.max(0, price);
         }
 
         // 通过WebSocket获取价格
@@ -4578,9 +4603,11 @@
                 const orderBooks = await this.getMarketData(itemHrid);
                 if (orderBooks?.[enhancementLevel]) {
                     const { asks: asksList, bids: bidsList } = orderBooks[enhancementLevel];
+                    const askPrice = asksList?.[0]?.price;
+                    const bidPrice = bidsList?.[0]?.price;
                     return {
-                        ask: asksList?.[0]?.price || 0,
-                        bid: bidsList?.[0]?.price || 0
+                        ask: this.safePrice(askPrice),
+                        bid: this.safePrice(bidPrice)
                     };
                 }
                 return { ask: 0, bid: 0 };
@@ -4592,11 +4619,8 @@
 
         // 通过JSON获取价格
         async getJsonPrice(itemHrid) {
-            if (this.isJsonDataExpired()) {
-                await this.loadJsonMarketData();
-            }
-
             if (!this.jsonMarketData) {
+                console.warn('[ItemValueCalculator] JSON市场数据不存在');
                 return { ask: 0, bid: 0 };
             }
 
@@ -4608,22 +4632,25 @@
             }
 
             return {
-                ask: marketItem.ask === -1 ? 0 : (marketItem.ask || 0),
-                bid: marketItem.bid === -1 ? 0 : (marketItem.bid || 0)
+                ask: this.safePrice(marketItem.ask),
+                bid: this.safePrice(marketItem.bid)
             };
         }
 
         // 获取牛铃价格
         async getCowbellPrice() {
-            if (this.isJsonDataExpired()) {
-                await this.loadJsonMarketData();
+            if (!this.jsonMarketData) {
+                console.warn('[ItemValueCalculator] JSON市场数据不存在，无法获取牛铃价格');
+                return { ask: 0, bid: 0 };
             }
 
             const bagMarketItem = this.jsonMarketData?.['Bag Of 10 Cowbells'];
             if (bagMarketItem) {
+                const bagAskPrice = this.safePrice(bagMarketItem.ask);
+                const bagBidPrice = this.safePrice(bagMarketItem.bid);
                 return {
-                    ask: (bagMarketItem.ask === -1 ? 0 : (bagMarketItem.ask || 0)) / 10,
-                    bid: (bagMarketItem.bid === -1 ? 0 : (bagMarketItem.bid || 0)) / 10
+                    ask: bagAskPrice / 10,
+                    bid: bagBidPrice / 10
                 };
             }
             return { ask: 0, bid: 0 };
@@ -4803,6 +4830,9 @@
         // 主计算函数
         async calculateItemValues() {
             try {
+                // 在计算前更新JSON数据
+                await this.updateJsonMarketData();
+
                 const characterItemMap = this.getCharacterItemMap();
                 if (!characterItemMap) {
                     throw new Error('无法获取物品数据，请确保在正确的游戏界面');
@@ -4812,17 +4842,28 @@
 
                 let totalAskValue = 0;
                 let totalBidValue = 0;
+                let successCount = 0;
+                let failedItems = [];
 
                 // 遍历库存物品
                 const itemEntries = characterItemMap instanceof Map ?
                     Array.from(characterItemMap.entries()) :
                     Object.entries(characterItemMap);
 
-                for (const [key, item] of itemEntries) {
-                    const result = await this.calculateSingleItem(item);
-                    if (result) {
-                        totalAskValue += result.totalAsk;
-                        totalBidValue += result.totalBid;
+                for (let i = 0; i < itemEntries.length; i++) {
+                    const [key, item] = itemEntries[i];
+                    try {
+                        const result = await this.calculateSingleItem(item);
+                        if (result) {
+                            totalAskValue += result.totalAsk;
+                            totalBidValue += result.totalBid;
+                            successCount++;
+                        } else {
+                            failedItems.push(`库存物品: ${item.itemHrid || 'Unknown'}`);
+                        }
+                    } catch (error) {
+                        console.error(`[ItemValueCalculator] 计算库存物品失败:`, item, error);
+                        failedItems.push(`库存物品: ${item.itemHrid || 'Unknown'} (${error.message})`);
                     }
                 }
 
@@ -4832,11 +4873,20 @@
                         Array.from(myMarketListingMap.entries()) :
                         Object.entries(myMarketListingMap);
 
-                    for (const [key, order] of orderEntries) {
-                        const result = await this.calculateMarketOrderValue(order);
-                        if (result) {
-                            totalAskValue += result.totalAsk;
-                            totalBidValue += result.totalBid;
+                    for (let i = 0; i < orderEntries.length; i++) {
+                        const [key, order] = orderEntries[i];
+                        try {
+                            const result = await this.calculateMarketOrderValue(order);
+                            if (result) {
+                                totalAskValue += result.totalAsk;
+                                totalBidValue += result.totalBid;
+                                successCount++;
+                            } else {
+                                failedItems.push(`市场订单: ${order.itemHrid || 'Unknown'}`);
+                            }
+                        } catch (error) {
+                            console.error(`[ItemValueCalculator] 计算市场订单失败:`, order, error);
+                            failedItems.push(`市场订单: ${order.itemHrid || 'Unknown'} (${error.message})`);
                         }
                     }
                 }
@@ -4844,9 +4894,19 @@
                 // 记录数据到历史
                 this.addValueRecord(totalAskValue, totalBidValue);
 
+                // 输出统计信息
+                const totalItems = itemEntries.length + (myMarketListingMap ? Object.keys(myMarketListingMap).length : 0);
+                console.log(`[ItemValueCalculator] 计算完成 - 计算数量: ${successCount}, Ask总值: ${totalAskValue.toFixed(0)}, Bid总值: ${totalBidValue.toFixed(0)}`);
+
+                if (failedItems.length > 0) {
+                }
+
                 return {
                     totalAsk: totalAskValue,
-                    totalBid: totalBidValue
+                    totalBid: totalBidValue,
+                    successCount,
+                    totalItems,
+                    failedItems
                 };
 
             } catch (error) {
@@ -4879,9 +4939,12 @@
             }
 
             // 清理按钮
-            const button = document.getElementById('value-increment-button');
-            if (button) {
-                button.remove();
+            const buttons = document.querySelectorAll('[id^="value-increment-button"]');
+            buttons.forEach(button => button.remove());
+
+            if (this.updateTimer) {
+                clearInterval(this.updateTimer);
+                this.updateTimer = null;
             }
         }
     }
@@ -8075,31 +8138,46 @@
         }
 
         async getMarketData(itemHrid) {
-            try {
+            return new Promise((resolve, reject) => {
                 const fullItemHrid = itemHrid.startsWith('/items/') ? itemHrid : `/items/${itemHrid}`;
 
                 // 检查缓存
-                const cached = window.marketDataCache?.get(fullItemHrid);
-                if (cached && Date.now() - cached.timestamp < 60000) {
-                    return cached.data;
+                if (this.marketData[fullItemHrid] && !utils.isCacheExpired(fullItemHrid, this.marketTimestamps, this.cacheExpiry)) {
+                    return resolve(this.marketData[fullItemHrid]);
                 }
 
-                // 等待市场数据响应
-                const responsePromise = window.PGE.waitForMessage(
-                    'market_item_order_books_updated',
-                    8000,
-                    (responseData) => responseData.marketItemOrderBooks?.itemHrid === fullItemHrid
-                );
+                if (!this.initialized || !window.PGE?.core) {
+                    return reject(new Error('PGE核心未初始化'));
+                }
+
+                // 设置超时
+                const timeout = setTimeout(() => {
+                    reject(new Error(`获取市场数据超时: ${fullItemHrid}`));
+                }, 10000); // 10秒超时
+
+                // 监听响应
+                const cleanup = window.PGE.hookMessage('market_item_order_books_updated', (responseData) => {
+                    if (responseData.marketItemOrderBooks?.itemHrid === fullItemHrid) {
+                        clearTimeout(timeout);
+                        cleanup(); // 清理监听器
+
+                        const orderBooks = responseData.marketItemOrderBooks.orderBooks;
+                        this.marketData[fullItemHrid] = orderBooks;
+                        this.marketTimestamps[fullItemHrid] = Date.now();
+
+                        resolve(orderBooks);
+                    }
+                });
 
                 // 请求市场数据
-                window.PGE.core.handleGetMarketItemOrderBooks(fullItemHrid);
-
-                const response = await responsePromise;
-                return response.marketItemOrderBooks;
-            } catch (error) {
-                console.error(LANG.quickSell.getMarketDataFailed + ':', error);
-                return null;
-            }
+                try {
+                    window.PGE.core.handleGetMarketItemOrderBooks(fullItemHrid);
+                } catch (error) {
+                    clearTimeout(timeout);
+                    cleanup();
+                    reject(new Error(`请求市场数据失败: ${error.message}`));
+                }
+            });
         }
 
         calculatePrice(marketData, enhancementLevel, quantity, sellType) {
