@@ -3,9 +3,9 @@
 // @name:zh-CN   [银河奶牛]生产采集增强
 // @name:en      MWI Production & Gathering Enhanced
 // @namespace    http://tampermonkey.net/
-// @version      3.5.2
-// @description  计算制造、烹饪、强化、房屋所需材料并一键购买，计算实时生产和炼金利润，增加按照目标材料数量进行采集的功能，快速切换角色，购物车功能
-// @description:en  Calculate materials for crafting, cooking, enhancing, housing with one-click purchase, calculate real-time production & alchemy profits, add target-based gathering functionality, fast character switching, shopping cart feature
+// @version      3.6.0
+// @description  计算生产、强化、房屋所需材料并一键购买；显示今日资产增量，统计30天总资产生成走势图；计算生产与炼金实时利润；按照目标材料数量进行采集；快速切换角色；自动收集市场订单；功能支持自定义开关。
+// @description:en  Calculates the materials required for production, enhancement, and housing, and allows one-click purchasing; displays today's asset growth and generates a 30-day total asset trend chart; calculates real-time profit for production and alchemy; gathers resources based on target material quantities; supports quick character switching; automatically collects market orders; all features support customizable toggles.
 // @author       XIxixi297
 // @license      CC-BY-NC-SA-4.0
 // @match        https://www.milkywayidle.com/*
@@ -29,6 +29,7 @@
         autoClaimMarketListings: false,
         considerRareLoot: false,
         itemValueCalculator: true,
+        quickSell: true,
     };
 
     const STORAGE_KEY = 'PGE_CONFIG';
@@ -65,6 +66,7 @@
         autoClaimMarketListings: null,
         considerRareLoot: null,
         itemValueCalculator: null,
+        quickSell: null,
     };
 
     // ==================== 常量配置 ====================
@@ -145,6 +147,43 @@
         exportFailed: '导出失败', importFailed: '导入失败',
         noListsToExport: '没有保存的购物清单可以导出', invalidImportFormat: '文件格式不正确',
 
+        quickSell: {
+            askSell: '左一出售',
+            bidSell: '右一出售',
+            confirmAskSell: '确认左一卖出',
+            confirmBidSell: '确认右一卖出',
+            startListing: '开始挂单',
+            startInstantSell: '开始直售',
+            noMarketData: '无法获取市场数据',   
+            sellFailed: '出售失败',
+            instantSellSuccess: '直售成功',
+            instantSellFailed: '直售失败',
+            listingSuccess: '挂单成功',
+            listingFailed: '挂单失败',
+            marketOrdersInsufficient: '市场买单不足。可出售:',
+            needed: '，需要:',
+            executeSellFailed: '执行出售操作失败',
+            getPriceFailed: '计算价格失败',
+            getMarketDataFailed: '获取市场数据失败',
+            extractItemInfoFailed: '提取物品信息失败'
+        },
+
+        chart: {
+            title: '资产变化趋势',
+            timeRange: '时间范围：',
+            days: ['1天', '3天', '7天', '14天', '30天'],
+            hoverTip: '将鼠标悬停在图表上查看详细数据',
+            noData: '暂无数据',
+            calculating: '计算中...',
+            todayIncrement: '今日增量:',
+            datasets: {
+                askTotal: 'Ask总值',
+                bidTotal: 'Bid总值',
+                movingAverage: '移动平均线',
+                trendLine: '趋势线'
+            }
+        },
+
         settings: {
             tabName: '脚本设置',
 
@@ -154,7 +193,7 @@
             },
             universalProfit: {
                 title: '生产行动利润计算',
-                description: '显示制造、烹饪等行动的实时利润 (刷新后生效)'
+                description: '显示制造、烹饪等生产行动的实时利润 (刷新后生效)'
             },
             alchemyProfit: {
                 title: '炼金利润计算',
@@ -162,7 +201,7 @@
             },
             considerArtisanTea: {
                 title: '考虑工匠茶效果',
-                description: '在材料计算时考虑工匠茶的加成'
+                description: '在计算材料数量时考虑工匠茶的加成'
             },
             gatheringEnhanced: {
                 title: '采集增强功能',
@@ -174,11 +213,19 @@
             },
             autoClaimMarketListings: {
                 title: '自动收集市场订单',
-                description: '当有市场订单可收集时自动收集物品'
+                description: '当有市场订单可收集时自动收集物品或金币'
             },
             considerRareLoot: {
                 title: '考虑稀有掉落物价值',
-                description: '在利润计算中考虑开箱等稀有掉落物的期望价值'
+                description: '在利润计算中考虑宝箱的期望价值'
+            },
+            itemValueCalculator: {
+                title: '每日资产增量和资产变化趋势图表',
+                description: '在背包界面显示每日资产增量，点击打开资产变化趋势图表 (刷新后生效)'
+            },
+            quickSell: {
+                title: '快速出售功能',
+                description: '点击物品时显示快速出售按钮'
             },
 
             resetToDefault: '🔄 重置为默认',
@@ -235,6 +282,43 @@
         exportFailed: 'Export failed', importFailed: 'Import failed',
         noListsToExport: 'No saved shopping lists to export', invalidImportFormat: 'Invalid file format',
 
+        quickSell: {
+            askSell: 'List at Ask',
+            bidSell: 'Sell at Bid',
+            confirmAskSell: 'Confirm List',
+            confirmBidSell: 'Confirm Sell',
+            startListing: 'Starting listing',
+            startInstantSell: 'Starting instant sell',
+            noMarketData: 'Unable to get market data',
+            sellFailed: 'Sell failed',
+            instantSellSuccess: 'Instant sell successful',
+            instantSellFailed: 'Instant sell failed',
+            listingSuccess: 'Listing successful',
+            listingFailed: 'Listing failed',
+            marketOrdersInsufficient: 'Market orders insufficient. Can sell:',
+            needed: ', needed:',
+            executeSellFailed: 'Execute sell operation failed',
+            getPriceFailed: 'Calculate price failed',
+            getMarketDataFailed: 'Get market data failed',
+            extractItemInfoFailed: 'Extract item information failed'
+        },
+
+        chart: {
+            title: 'Asset Change Trends',
+            timeRange: 'Time Range:',
+            days: ['1 Day', '3 Days', '7 Days', '14 Days', '30 Days'],
+            hoverTip: 'Hover over the chart to view detailed data',
+            noData: 'No data available',
+            calculating: 'Calculating...',
+            todayIncrement: 'Today\'s Increment:',
+            datasets: {
+                askTotal: 'Ask Total',
+                bidTotal: 'Bid Total',
+                movingAverage: 'Moving Average',
+                trendLine: 'Trend Line'
+            }
+        },
+
         settings: {
             tabName: 'Scripts',
 
@@ -244,7 +328,7 @@
             },
             universalProfit: {
                 title: 'Production Action Profit Calculation',
-                description: 'Show real-time profit for crafting, cooking actions (Apply after refresh)'
+                description: 'Display real-time profit for manufacturing, cooking, and other production actions (takes effect after refresh)'
             },
             alchemyProfit: {
                 title: 'Alchemy Profit Calculation',
@@ -252,7 +336,7 @@
             },
             considerArtisanTea: {
                 title: 'Consider Artisan Tea Effect',
-                description: 'Consider artisan tea bonus in material calculations'
+                description: 'Consider artisan tea bonuses when calculating material quantities'
             },
             gatheringEnhanced: {
                 title: 'Gathering Enhancement',
@@ -264,11 +348,19 @@
             },
             autoClaimMarketListings: {
                 title: 'Auto Claim Market Listings',
-                description: 'Automatically claim items when market listings are available'
+                description: 'Automatically claim items or coin when market listings are available'
             },
             considerRareLoot: {
                 title: 'Consider Rare Loot Value',
                 description: 'Consider expected value of rare loot (chests, etc.) in profit calculations'
+            },
+            itemValueCalculator: {
+                title: 'Daily Asset Increment and Asset Change Trend Chart',
+                description: 'Display daily asset increment in inventory interface, click to open asset change trend chart (takes effect after refresh)'
+            },
+            quickSell: {
+                title: 'Quick Sell Feature',
+                description: 'Show quick sell buttons when clicking items'
             },
 
             resetToDefault: '🔄 Reset to Default',
@@ -776,6 +868,235 @@
 
     };
 
+    // ==================== HackTimer ====================
+    class HackTimer {
+        constructor() {
+            this.worker = null;
+            this.fakeIdToCallback = {};
+            this.lastFakeId = 0;
+            this.maxFakeId = 0x7FFFFFFF;
+            this.originalSetInterval = window.setInterval;
+            this.originalClearInterval = window.clearInterval;
+            this.originalSetTimeout = window.setTimeout;
+            this.originalClearTimeout = window.clearTimeout;
+            this.isInitialized = false;
+        }
+
+        init() {
+            if (this.isInitialized) {
+                console.warn('HackTimer already initialized');
+                return;
+            }
+
+            if (typeof Worker === 'undefined') {
+                console.log('HackTimer: HTML5 Web Worker is not supported');
+                return false;
+            }
+
+            try {
+                const workerScript = this.createWorkerScript();
+                this.worker = new Worker(workerScript);
+                this.setupWorker();
+                this.replaceTimerFunctions();
+                this.isInitialized = true;
+                console.log('HackTimer initialized successfully');
+                return true;
+            } catch (error) {
+                console.error('HackTimer initialization failed:', error);
+                return false;
+            }
+        }
+
+        createWorkerScript() {
+            let workerScript = 'HackTimerWorker.js';
+
+            if (!/MSIE 10/i.test(navigator.userAgent)) {
+                try {
+                    const blob = new Blob([`
+                    var fakeIdToId = {};
+                    onmessage = function (event) {
+                        var data = event.data,
+                            name = data.name,
+                            fakeId = data.fakeId,
+                            time;
+                        if(data.hasOwnProperty('time')) {
+                            time = data.time;
+                        }
+                        switch (name) {
+                            case 'setInterval':
+                                fakeIdToId[fakeId] = setInterval(function () {
+                                    postMessage({fakeId: fakeId});
+                                }, time);
+                                break;
+                            case 'clearInterval':
+                                if (fakeIdToId.hasOwnProperty(fakeId)) {
+                                    clearInterval(fakeIdToId[fakeId]);
+                                    delete fakeIdToId[fakeId];
+                                }
+                                break;
+                            case 'setTimeout':
+                                fakeIdToId[fakeId] = setTimeout(function () {
+                                    postMessage({fakeId: fakeId});
+                                    if (fakeIdToId.hasOwnProperty(fakeId)) {
+                                        delete fakeIdToId[fakeId];
+                                    }
+                                }, time);
+                                break;
+                            case 'clearTimeout':
+                                if (fakeIdToId.hasOwnProperty(fakeId)) {
+                                    clearTimeout(fakeIdToId[fakeId]);
+                                    delete fakeIdToId[fakeId];
+                                }
+                                break;
+                        }
+                    }
+                `]);
+                    workerScript = window.URL.createObjectURL(blob);
+                } catch (error) {
+                    console.warn('HackTimer: Blob not supported, using external script');
+                }
+            }
+
+            return workerScript;
+        }
+
+        setupWorker() {
+            this.worker.onmessage = (event) => {
+                const data = event.data;
+                const fakeId = data.fakeId;
+
+                if (this.fakeIdToCallback.hasOwnProperty(fakeId)) {
+                    const request = this.fakeIdToCallback[fakeId];
+                    let callback = request.callback;
+                    const parameters = request.parameters;
+
+                    if (request.hasOwnProperty('isTimeout') && request.isTimeout) {
+                        delete this.fakeIdToCallback[fakeId];
+                    }
+
+                    if (typeof callback === 'string') {
+                        try {
+                            callback = new Function(callback);
+                        } catch (error) {
+                            console.error('HackTimer: Error parsing callback code string:', error);
+                            return;
+                        }
+                    }
+
+                    if (typeof callback === 'function') {
+                        callback.apply(window, parameters);
+                    }
+                }
+            };
+
+            this.worker.onerror = (event) => {
+                console.error('HackTimer worker error:', event);
+            };
+        }
+
+        getFakeId() {
+            do {
+                if (this.lastFakeId == this.maxFakeId) {
+                    this.lastFakeId = 0;
+                } else {
+                    this.lastFakeId++;
+                }
+            } while (this.fakeIdToCallback.hasOwnProperty(this.lastFakeId));
+            return this.lastFakeId;
+        }
+
+        replaceTimerFunctions() {
+            window.setInterval = (callback, time) => {
+                if (!this.isInitialized) {
+                    return this.originalSetInterval.call(window, callback, time);
+                }
+
+                const fakeId = this.getFakeId();
+                this.fakeIdToCallback[fakeId] = {
+                    callback: callback,
+                    parameters: Array.prototype.slice.call(arguments, 2)
+                };
+                this.worker.postMessage({
+                    name: 'setInterval',
+                    fakeId: fakeId,
+                    time: time
+                });
+                return fakeId;
+            };
+
+            window.clearInterval = (fakeId) => {
+                if (!this.isInitialized) {
+                    return this.originalClearInterval.call(window, fakeId);
+                }
+
+                if (this.fakeIdToCallback.hasOwnProperty(fakeId)) {
+                    delete this.fakeIdToCallback[fakeId];
+                    this.worker.postMessage({
+                        name: 'clearInterval',
+                        fakeId: fakeId
+                    });
+                }
+            };
+
+            window.setTimeout = (callback, time) => {
+                if (!this.isInitialized) {
+                    return this.originalSetTimeout.call(window, callback, time);
+                }
+
+                const fakeId = this.getFakeId();
+                this.fakeIdToCallback[fakeId] = {
+                    callback: callback,
+                    parameters: Array.prototype.slice.call(arguments, 2),
+                    isTimeout: true
+                };
+                this.worker.postMessage({
+                    name: 'setTimeout',
+                    fakeId: fakeId,
+                    time: time
+                });
+                return fakeId;
+            };
+
+            window.clearTimeout = (fakeId) => {
+                if (!this.isInitialized) {
+                    return this.originalClearTimeout.call(window, fakeId);
+                }
+
+                if (this.fakeIdToCallback.hasOwnProperty(fakeId)) {
+                    delete this.fakeIdToCallback[fakeId];
+                    this.worker.postMessage({
+                        name: 'clearTimeout',
+                        fakeId: fakeId
+                    });
+                }
+            };
+        }
+
+        restore() {
+            if (!this.isInitialized) {
+                return;
+            }
+
+            window.setInterval = this.originalSetInterval;
+            window.clearInterval = this.originalClearInterval;
+            window.setTimeout = this.originalSetTimeout;
+            window.clearTimeout = this.originalClearTimeout;
+
+            if (this.worker) {
+                this.worker.terminate();
+            }
+
+            this.isInitialized = false;
+            console.log('HackTimer restored original functions');
+        }
+
+        destroy() {
+            this.restore();
+            this.fakeIdToCallback = {};
+            this.worker = null;
+        }
+    }
+
     // ==================== 通知系统 ====================
     class Toast {
         constructor() {
@@ -1232,7 +1553,7 @@
                 }
             ];
             this.versionInfo = {
-                current: "3.5.2", // 当前版本
+                current: "3.6.0", // 当前版本
                 latest: null,
                 updateTime: null,
                 changelog: null
@@ -1250,8 +1571,7 @@
         async loadVersionInfo() {
             const urls = [
                 'https://raw.githubusercontent.com/CYR2077/MWI-Production-Gathering-Enhanced/main/version.json',
-                'https://cdn.jsdelivr.net/gh/CYR2077/MWI-Production-Gathering-Enhanced@main/version.json',
-                'https://hub.gitmirror.com/raw.githubusercontent.com/CYR2077/MWI-Production-Gathering-Enhanced/main/version.json'
+                `https://hub.gitmirror.com/raw.githubusercontent.com/CYR2077/MWI-Production-Gathering-Enhanced/main/version.json?_=${Date.now()}`,
             ];
 
             for (const url of urls) {
@@ -1281,14 +1601,31 @@
             console.error('All version sources failed');
         }
 
+        // 检查是否有可用更新
+        hasUpdate(currentVersion, latestVersion) {
+            if (!currentVersion || !latestVersion) return false;
+
+            const currentParts = currentVersion.split('.').map(n => parseInt(n) || 0);
+            const latestParts = latestVersion.split('.').map(n => parseInt(n) || 0);
+
+            for (let i = 0; i < 3; i++) {
+                const currentNum = currentParts[i] || 0;
+                const latestNum = latestParts[i] || 0;
+
+                if (latestNum > currentNum) return true;
+                if (latestNum < currentNum) return false;
+            }
+
+            return false;
+        }
+
         // 更新版本显示
         updateVersionDisplay() {
             const versionElement = document.querySelector('.version-info');
             const updateButton = document.querySelector('.check-update-btn');
 
             if (versionElement) {
-                const isUpdateAvailable = this.versionInfo.latest &&
-                    this.versionInfo.latest !== this.versionInfo.current;
+                const isUpdateAvailable = this.hasUpdate(this.versionInfo.current, this.versionInfo.latest);
 
                 versionElement.innerHTML = this.renderVersionInfoHTML();
 
@@ -1315,8 +1652,7 @@
             try {
                 await this.loadVersionInfo();
 
-                const isUpdateAvailable = this.versionInfo.latest &&
-                    this.versionInfo.latest !== this.versionInfo.current;
+                const isUpdateAvailable = this.hasUpdate(this.versionInfo.current, this.versionInfo.latest);
 
                 // 更新版本信息显示，包括更新日志
                 this.showVersionDetails(isUpdateAvailable);
@@ -1660,9 +1996,9 @@
             indicator.style.left = `${rect.left - containerRect.left}px`;
             indicator.style.width = `${rect.width}px`;
         }
+
         renderVersionInfoHTML() {
-            const isUpdateAvailable = this.versionInfo.latest &&
-                this.versionInfo.latest !== this.versionInfo.current;
+            const isUpdateAvailable = this.hasUpdate(this.versionInfo.current, this.versionInfo.latest);
 
             const statusIcon = isUpdateAvailable
                 ? `<span style="color: #f44336;">${LANG.settings.hasUpdate}</span>`
@@ -1685,6 +2021,38 @@
             container.className = 'custom-tab-content';
 
             container.innerHTML = `
+                <div class="custom-tab-option">
+                    <input type="checkbox" id="considerArtisanTea" ${window.PGE_CONFIG?.considerArtisanTea ? 'checked' : ''}>
+                    <label for="considerArtisanTea">
+                        <strong>🍵 ${LANG.settings.considerArtisanTea.title}</strong><br>
+                        <span style="font-size: 12px; opacity: 0.8;">${LANG.settings.considerArtisanTea.description}</span>
+                    </label>
+                </div>
+
+                <div class="custom-tab-option">
+                    <input type="checkbox" id="considerRareLoot" ${window.PGE_CONFIG?.considerRareLoot ? 'checked' : ''}>
+                    <label for="considerRareLoot">
+                        <strong>💎 ${LANG.settings.considerRareLoot.title}</strong><br>
+                        <span style="font-size: 12px; opacity: 0.8;">${LANG.settings.considerRareLoot.description}</span>
+                    </label>
+                </div>
+
+                <div class="custom-tab-option">
+                    <input type="checkbox" id="autoClaimMarketListings" ${window.PGE_CONFIG?.autoClaimMarketListings ? 'checked' : ''}>
+                    <label for="autoClaimMarketListings">
+                        <strong>🎁 ${LANG.settings.autoClaimMarketListings.title}</strong><br>
+                        <span style="font-size: 12px; opacity: 0.8;">${LANG.settings.autoClaimMarketListings.description}</span>
+                    </label>
+                </div>
+
+                <div class="custom-tab-option">
+                    <input type="checkbox" id="quickSell" ${window.PGE_CONFIG?.quickSell ? 'checked' : ''}>
+                    <label for="quickSell">
+                        <strong>⚡ ${LANG.settings.quickSell.title}</strong><br>
+                        <span style="font-size: 12px; opacity: 0.8;">${LANG.settings.quickSell.description}</span>
+                    </label>
+                </div>
+
                 <div class="custom-tab-option">
                     <input type="checkbox" id="quickPurchase" ${window.PGE_CONFIG?.quickPurchase ? 'checked' : ''}>
                     <label for="quickPurchase">
@@ -1710,22 +2078,6 @@
                 </div>
                 
                 <div class="custom-tab-option">
-                    <input type="checkbox" id="considerArtisanTea" ${window.PGE_CONFIG?.considerArtisanTea ? 'checked' : ''}>
-                    <label for="considerArtisanTea">
-                        <strong>🍵 ${LANG.settings.considerArtisanTea.title}</strong><br>
-                        <span style="font-size: 12px; opacity: 0.8;">${LANG.settings.considerArtisanTea.description}</span>
-                    </label>
-                </div>
-
-                <div class="custom-tab-option">
-                    <input type="checkbox" id="considerRareLoot" ${window.PGE_CONFIG?.considerRareLoot ? 'checked' : ''}>
-                    <label for="considerRareLoot">
-                        <strong>💎 ${LANG.settings.considerRareLoot.title}</strong><br>
-                        <span style="font-size: 12px; opacity: 0.8;">${LANG.settings.considerRareLoot.description}</span>
-                    </label>
-                </div>
-                
-                <div class="custom-tab-option">
                     <input type="checkbox" id="gatheringEnhanced" ${window.PGE_CONFIG?.gatheringEnhanced ? 'checked' : ''}>
                     <label for="gatheringEnhanced">
                         <strong>🎯 ${LANG.settings.gatheringEnhanced.title}</strong><br>
@@ -1740,20 +2092,12 @@
                         <span style="font-size: 12px; opacity: 0.8;">${LANG.settings.characterSwitcher.description}</span>
                     </label>
                 </div>
-                
-                <div class="custom-tab-option">
-                    <input type="checkbox" id="autoClaimMarketListings" ${window.PGE_CONFIG?.autoClaimMarketListings ? 'checked' : ''}>
-                    <label for="autoClaimMarketListings">
-                        <strong>🎁 ${LANG.settings.autoClaimMarketListings.title}</strong><br>
-                        <span style="font-size: 12px; opacity: 0.8;">${LANG.settings.autoClaimMarketListings.description}</span>
-                    </label>
-                </div>
 
                 <div class="custom-tab-option">
                     <input type="checkbox" id="itemValueCalculator" ${window.PGE_CONFIG?.itemValueCalculator ? 'checked' : ''}>
                     <label for="itemValueCalculator">
-                        <strong>💰 物品价值计算器</strong><br>
-                        <span style="font-size: 12px; opacity: 0.8;">启用物品价值计算功能，强化物品使用实时价格</span>
+                        <strong>💰 ${LANG.settings.itemValueCalculator.title}</strong><br>
+                        <span style="font-size: 12px; opacity: 0.8;">${LANG.settings.itemValueCalculator.description}</span>
                     </label>
                 </div>
                 
@@ -1812,18 +2156,37 @@
             if (window.PGE_CONFIG) {
                 window.PGE_CONFIG[key] = value;
 
-                // 对于自动收集市场订单，立即生效
+                if (key === 'quickSell') {
+                    const manager = window.MWIModules?.quickSell;
+                    if (value && !manager) {
+                        // 启用功能
+                        window.MWIModules.quickSell = new QuickSellManager();
+                    } else if (!value && manager) {
+                        // 禁用功能
+                        manager.disable();
+                    } else if (manager) {
+                        // 更新现有实例的状态
+                        if (value) {
+                            manager.enable();
+                        } else {
+                            manager.disable();
+                        }
+                    }
+                }
+
+                // 对于自动收集市场订单,立即生效
                 if (key === 'autoClaimMarketListings') {
-                    if (value && !window.MWIModules.autoClaimMarketListings) {
+                    const manager = window.MWIModules.autoClaimMarketListings;
+                    if (value && !manager) {
                         // 启用功能
                         window.MWIModules.autoClaimMarketListings = new AutoClaimMarketListingsManager();
-                    } else if (!value && window.MWIModules.autoClaimMarketListings) {
+                    } else if (!value && manager) {
                         // 禁用功能
-                        window.MWIModules.autoClaimMarketListings.cleanup();
+                        manager.cleanup();
                         window.MWIModules.autoClaimMarketListings = null;
-                    } else if (window.MWIModules.autoClaimMarketListings) {
+                    } else if (manager) {
                         // 更新现有实例的配置
-                        window.MWIModules.autoClaimMarketListings.updateConfig(value);
+                        manager.updateConfig(value);
                     }
                 }
             }
@@ -1842,6 +2205,7 @@
                 autoClaimMarketListings: false,
                 considerRareLoot: false,
                 itemValueCalculator: true,
+                quickSell: true,
             };
 
             window.PGE_CONFIG = { ...defaultConfig };
@@ -3819,7 +4183,7 @@
             this.jsonDataTimestamp = 0;
             this.jsonDataTTL = 300000; // 5分钟缓存
             this.storageKey = `MWI_ITEM_VALUE_HISTORY_${this.characterId}`;
-            this.recordInterval = 30 * 1000; // 30分钟
+            this.recordInterval = 30 * 1000 * 60; // 30分钟
             this.maxHistoryDays = 30; // 最多保留30天
             this.compressionThreshold = 7; // 7天后开始压缩
             this.autoRecordTimer = null;
@@ -3835,6 +4199,7 @@
             this.cleanupOldData();
             this.setupIncrementButtonObserver(); // 添加按钮观察器
             this.chartViewer = new AssetChartViewer(this);
+            await this.calculateItemValues();
         }
 
         // 获取本地时间
@@ -4194,7 +4559,7 @@
 
             // 特殊处理牛铃
             if (itemHrid === '/items/cowbell') {
-                return await this.getCowbellPrice(enhancementLevel);
+                return await this.getCowbellPrice();
             }
 
             // 根据强化等级决定数据源
@@ -4249,31 +4614,19 @@
         }
 
         // 获取牛铃价格
-        async getCowbellPrice(enhancementLevel) {
-            const bagOfCowbellsName = 'Bag Of 10 Cowbells';
-
-            if (enhancementLevel > 0) {
-                // 强化牛铃通过WebSocket获取
-                const bagPrice = await this.getWebSocketPrice('/items/bag_of_10_cowbells', enhancementLevel);
-                return {
-                    ask: bagPrice.ask / 10,
-                    bid: bagPrice.bid / 10
-                };
-            } else {
-                // 普通牛铃通过JSON获取
-                if (this.isJsonDataExpired()) {
-                    await this.loadJsonMarketData();
-                }
-
-                const bagMarketItem = this.jsonMarketData?.[bagOfCowbellsName];
-                if (bagMarketItem) {
-                    return {
-                        ask: (bagMarketItem.ask === -1 ? 0 : (bagMarketItem.ask || 0)) / 10,
-                        bid: (bagMarketItem.bid === -1 ? 0 : (bagMarketItem.bid || 0)) / 10
-                    };
-                }
-                return { ask: 0, bid: 0 };
+        async getCowbellPrice() {
+            if (this.isJsonDataExpired()) {
+                await this.loadJsonMarketData();
             }
+
+            const bagMarketItem = this.jsonMarketData?.['Bag Of 10 Cowbells'];
+            if (bagMarketItem) {
+                return {
+                    ask: (bagMarketItem.ask === -1 ? 0 : (bagMarketItem.ask || 0)) / 10,
+                    bid: (bagMarketItem.bid === -1 ? 0 : (bagMarketItem.bid || 0)) / 10
+                };
+            }
+            return { ask: 0, bid: 0 };
         }
 
         // 从itemHrid提取物品名称
@@ -4502,11 +4855,10 @@
             }
         }
 
-        // 必需的抽象方法实现（继承自BaseProfitCalculator）
         getContainerId() { return 'item-value-calculator'; }
         getPessimisticId() { return 'item-value-pessimistic'; }
         getOptimisticId() { return 'item-value-optimistic'; }
-        getWaitingText() { return '计算中...'; }
+        getWaitingText() { return LANG.chart.calculating; }
         getActionData() { return null; }
         calculateProfit() { return null; }
         getStateFingerprint() { return ''; }
@@ -4823,7 +5175,7 @@
 
             const title = document.createElement('h2');
             title.className = 'asset-chart-title';
-            title.textContent = '资产变化趋势';
+            title.textContent = LANG.chart.title;
 
             header.appendChild(title);
 
@@ -4836,15 +5188,15 @@
             timeRangeContainer.className = 'asset-chart-time-range';
 
             const timeRangeLabel = document.createElement('span');
-            timeRangeLabel.textContent = '时间范围：';
+            timeRangeLabel.textContent = LANG.chart.timeRange;
             timeRangeLabel.style.fontWeight = 'bold';
 
             const timeRangeButtons = [
-                { label: '1天', value: 1 },
-                { label: '3天', value: 3 },
-                { label: '7天', value: 7 },
-                { label: '14天', value: 14 },
-                { label: '30天', value: 30 }
+                { label: LANG.chart.days[0], value: 1 },
+                { label: LANG.chart.days[1], value: 3 },
+                { label: LANG.chart.days[2], value: 7 },
+                { label: LANG.chart.days[3], value: 14 },
+                { label: LANG.chart.days[4], value: 30 }
             ];
 
             timeRangeContainer.appendChild(timeRangeLabel);
@@ -4885,7 +5237,7 @@
             const infoPanel = document.createElement('div');
             infoPanel.className = 'asset-chart-info-panel';
             infoPanel.id = 'asset-chart-info-panel';
-            infoPanel.innerHTML = '<span style="color: rgba(255, 255, 255, 0.7);">将鼠标悬停在图表上查看详细数据</span>';
+            infoPanel.innerHTML = `<span style="color: rgba(255, 255, 255, 0.7);">${LANG.chart.hoverTip}</span>`;
 
             // 组装界面
             modalContent.appendChild(closeBtn);
@@ -4984,23 +5336,29 @@
         // 准备图表数据
         prepareChartData() {
             const historyData = this.calculator.getHistoryData();
-            const now = Date.now();
-            const cutoffTime = now - (this.selectedDays * 24 * 60 * 60 * 1000);
 
-            // 过滤指定时间范围的数据
-            const filteredData = historyData.filter(record => record.timestamp >= cutoffTime);
+            if (historyData.length === 0) {
+                this.chartData = null;
+                return;
+            }
+
+            // 先按时间排序（从旧到新）
+            const sortedData = [...historyData].sort((a, b) => a.timestamp - b.timestamp);
+
+            // 找到最新的数据时间
+            const latestTimestamp = sortedData[sortedData.length - 1].timestamp;
+            const cutoffTime = latestTimestamp - (this.selectedDays * 24 * 60 * 60 * 1000);
+
+            // 过滤指定时间范围的数据（从最新数据往前推）
+            const filteredData = sortedData.filter(record => record.timestamp >= cutoffTime);
 
             if (filteredData.length === 0) {
                 this.chartData = null;
                 return;
             }
 
-            // 按时间排序
-            filteredData.sort((a, b) => a.timestamp - b.timestamp);
-
             // 数据清洗：去除异常值
             const cleanedData = this.cleanData(filteredData);
-
             this.chartData = {
                 points: cleanedData,
                 minTimestamp: Math.min(...cleanedData.map(p => p.timestamp)),
@@ -5130,7 +5488,7 @@
                     labels: times,
                     datasets: [
                         {
-                            label: 'Ask总值',
+                            label: LANG.chart.datasets.askTotal,
                             data: askPrices,
                             borderColor: this.chartConfig.colors.ask,
                             backgroundColor: this.chartConfig.colors.ask + '20',
@@ -5141,7 +5499,7 @@
                             hidden: !this.datasetVisibility.ask
                         },
                         {
-                            label: 'Bid总值',
+                            label: LANG.chart.datasets.bidTotal,
                             data: bidPrices,
                             borderColor: this.chartConfig.colors.bid,
                             backgroundColor: this.chartConfig.colors.bid + '20',
@@ -5152,7 +5510,7 @@
                             hidden: !this.datasetVisibility.bid
                         },
                         {
-                            label: '移动平均线',
+                            label: LANG.chart.datasets.movingAverage,
                             data: maValues,
                             borderColor: this.chartConfig.colors.ma,
                             backgroundColor: this.chartConfig.colors.ma + '20',
@@ -5163,7 +5521,7 @@
                             hidden: !this.datasetVisibility.ma
                         },
                         {
-                            label: '趋势线',
+                            label: LANG.chart.datasets.trendLine,
                             data: trendlineData,
                             borderColor: this.chartConfig.colors.trend,
                             backgroundColor: this.chartConfig.colors.trend + '20',
@@ -5266,9 +5624,6 @@
             });
         }
 
-        /**
-         * 格式化准确值（显示完整数值，添加千位分隔符）
-         */
         formatAccurateValue(value) {
             if (value === null || value === undefined || isNaN(value)) {
                 return '0';
@@ -5288,7 +5643,7 @@
             ctx.font = '16px Arial';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
-            ctx.fillText('暂无数据', this.elements.canvas.width / 2, this.elements.canvas.height / 2);
+            ctx.fillText(LANG.chart.noData, this.elements.canvas.width / 2, this.elements.canvas.height / 2);
         }
 
         updateInfoPanel(point) {
@@ -5313,7 +5668,7 @@
             this.elements.infoPanel.innerHTML = `
                 <div style="display: flex; align-items: center; gap: 16px;">
                     <div>
-                        <strong style="color: rgba(255, 255, 255, 0.9);">今日增量:</strong>
+                        <strong style="color: rgba(255, 255, 255, 0.9);">${LANG.chart.todayIncrement}</strong>
                         <span style="color: ${askColor}; font-weight: bold; margin-left: 8px;">
                             ${this.formatAccurateValue(askIncrement)}
                         </span>
@@ -5327,7 +5682,7 @@
         }
 
         clearInfoPanel() {
-            this.elements.infoPanel.innerHTML = '<span style="color: rgba(255, 255, 255, 0.7);">将鼠标悬停在图表上查看详细数据</span>';
+            this.elements.infoPanel.innerHTML = `<span style="color: rgba(255, 255, 255, 0.7);">${LANG.chart.hoverTip}</span>`;
         }
 
         formatValue(value) {
@@ -5352,6 +5707,8 @@
             this.cartContainer = null;
             this.maxSavedLists = 5;
             this.currentListName = '';
+            this.wasDragged = false;
+            this.cartTabPosition = this.loadCartTabPosition();
             this.init();
         }
 
@@ -5372,7 +5729,35 @@
                 if (listNameInput) {
                     listNameInput.value = this.currentListName;
                 }
+
+                this.setCartTabInitialPosition();
             }, 0);
+        }
+
+        // 加载购物车标签位置
+        loadCartTabPosition() {
+            try {
+                const saved = JSON.parse(localStorage.getItem('milkyway-cart-tab-position'));
+                return saved || { y: '50%' };
+            } catch (error) {
+                return { y: '50%' };
+            }
+        }
+
+        // 保存购物车标签位置
+        saveCartTabPosition() {
+            try {
+                localStorage.setItem('milkyway-cart-tab-position', JSON.stringify(this.cartTabPosition));
+            } catch (error) {
+                console.warn('保存购物车标签位置失败:', error);
+            }
+        }
+
+        setCartTabInitialPosition() {
+            const cartTab = document.getElementById('cart-tab');
+            if (cartTab && this.cartTabPosition.y) {
+                cartTab.style.top = this.cartTabPosition.y;
+            }
         }
 
         createCartDrawer() {
@@ -5405,7 +5790,7 @@
                     <div id="cart-tab" style="
                         position: absolute;
                         left: -40px;
-                        top: 50%;
+                        top: ${this.cartTabPosition.y};
                         transform: translateY(-50%);
                         width: 40px;
                         height: 80px;
@@ -5421,6 +5806,10 @@
                         cursor: pointer;
                         transition: all 0.3s ease;
                         box-shadow: -2px 0 8px rgba(0,0,0,0.2);
+                        user-select: none;
+                        -webkit-user-select: none;
+                        -moz-user-select: none;
+                        -ms-user-select: none;
                     ">
                         <div style="
                             font-size: 18px;
@@ -5690,6 +6079,134 @@
             this.addItem(itemInfo, 1);
         }
 
+        setupCartTabDragAndClick() {
+            const cartTab = document.getElementById('cart-tab');
+            if (!cartTab) return;
+
+            let isDragging = false;
+            let startY, currentTopPercent;
+
+            const handleStart = (e) => {
+                isDragging = true;
+                this.wasDragged = false;
+
+                const clientY = e.type === 'mousedown' ? e.clientY : e.touches[0].clientY;
+
+                const currentTop = cartTab.style.top;
+                if (currentTop.includes('%')) {
+                    currentTopPercent = parseFloat(currentTop);
+                } else if (currentTop.includes('px')) {
+                    const containerHeight = this.cartContainer.offsetHeight;
+                    const topPx = parseFloat(currentTop);
+                    currentTopPercent = (topPx / containerHeight) * 100;
+                } else {
+                    currentTopPercent = 50;
+                }
+
+                startY = clientY;
+                cartTab.style.transition = 'none';
+                e.preventDefault();
+                e.stopPropagation();
+            };
+
+            const handleMove = (e) => {
+                if (!isDragging) return;
+
+                const clientY = e.type === 'mousemove' ? e.clientY : e.touches[0].clientY;
+                const deltaY = clientY - startY;
+
+                if (Math.abs(deltaY) > 5) {
+                    this.wasDragged = true;
+                }
+
+                const containerHeight = this.cartContainer.offsetHeight;
+                const deltaPercent = (deltaY / containerHeight) * 100;
+
+                let newPercent = currentTopPercent + deltaPercent;
+                newPercent = Math.max(10, Math.min(newPercent, 90));
+                cartTab.style.top = newPercent + '%';
+                this.cartTabPosition.y = newPercent + '%';
+            };
+
+            const handleEnd = () => {
+                if (!isDragging) return;
+                isDragging = false;
+
+                cartTab.style.transition = 'all 0.3s ease';
+
+                this.saveCartTabPosition();
+
+                setTimeout(() => {
+                    if (!isDragging) {
+                        this.wasDragged = false;
+                    }
+                }, 100);
+            };
+
+            // 点击事件处理
+            const handleClick = (e) => {
+                if (!this.wasDragged) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    this.toggleCart();
+                }
+                // 重置拖拽状态
+                setTimeout(() => {
+                    this.wasDragged = false;
+                }, 100);
+            };
+
+            // 右键清空购物车
+            const handleContextMenu = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (this.items.size > 0 && !this.wasDragged) {
+                    this.clearCart();
+                }
+            };
+
+            // 鼠标事件
+            cartTab.addEventListener('mousedown', handleStart);
+            document.addEventListener('mousemove', handleMove);
+            document.addEventListener('mouseup', handleEnd);
+
+            // 触摸事件
+            cartTab.addEventListener('touchstart', handleStart, { passive: false });
+            document.addEventListener('touchmove', handleMove, { passive: false });
+            document.addEventListener('touchend', handleEnd);
+
+            // 点击和右键事件
+            cartTab.addEventListener('click', handleClick);
+            cartTab.addEventListener('contextmenu', handleContextMenu);
+
+            // 悬停效果
+            cartTab.addEventListener('mouseenter', () => {
+                if (!isDragging) {
+                    cartTab.style.backgroundColor = 'rgba(156, 39, 176, 0.1)';
+                    cartTab.style.transform = 'translateY(-50%) scale(1.05)';
+                }
+            });
+
+            cartTab.addEventListener('mouseleave', () => {
+                if (!isDragging) {
+                    cartTab.style.backgroundColor = 'rgba(42, 43, 66, 0.95)';
+                    cartTab.style.transform = 'translateY(-50%) scale(1)';
+                }
+            });
+
+            // 手机端触摸点击处理
+            cartTab.addEventListener('touchend', (e) => {
+                if (!this.wasDragged) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    this.toggleCart();
+                }
+                setTimeout(() => {
+                    this.wasDragged = false;
+                }, 100);
+            });
+        }
+
         bindEvents() {
             const cartTab = document.getElementById('cart-tab');
             const buyBtn = document.getElementById('cart-buy-btn');
@@ -5700,15 +6217,7 @@
             const exportBtn = document.getElementById('export-lists-btn');
             const importBtn = document.getElementById('import-lists-btn');
 
-            cartTab.addEventListener('click', () => this.toggleCart());
-
-            cartTab.addEventListener('contextmenu', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                if (this.items.size > 0) {
-                    this.clearCart();
-                }
-            });
+            this.setupCartTabDragAndClick();
 
             listNameInput.addEventListener('input', (e) => {
                 const inputValue = e.target.value.trim();
@@ -5716,15 +6225,6 @@
                     this.currentListName = inputValue;
                     this.saveCartToStorage();
                 }
-            });
-
-            cartTab.addEventListener('mouseenter', () => {
-                cartTab.style.backgroundColor = 'rgba(156, 39, 176, 0.1)';
-                cartTab.style.transform = 'translateY(-50%) scale(1.05)';
-            });
-            cartTab.addEventListener('mouseleave', () => {
-                cartTab.style.backgroundColor = 'rgba(42, 43, 66, 0.95)';
-                cartTab.style.transform = 'translateY(-50%) scale(1)';
             });
 
             buyBtn.addEventListener('click', () => this.batchPurchase(false));
@@ -6202,7 +6702,6 @@
             return true;
         }
 
-        // 其他必要的方法实现...
         toggleCart() {
             if (this.isOpen) {
                 this.closeCart();
@@ -7335,6 +7834,415 @@
         }
     }
 
+    // ==================== 快速出售管理器 ====================
+    class QuickSellManager {
+        constructor() {
+            this.processedMenus = new WeakSet();
+            this.isProcessing = false;
+            this.buttonStates = new WeakMap();
+            this.isEnabled = true;
+            this.init();
+        }
+
+        init() {
+            this.setupObserver();
+        }
+
+        setupObserver() {
+            const observer = new MutationObserver(() => {
+                this.checkAndAddSellButtons();
+            });
+            observer.observe(document.body, { childList: true, subtree: true });
+        }
+
+        enable() {
+            this.isEnabled = true;
+            this.init();
+        }
+
+        disable() {
+            this.isEnabled = false;
+            document.querySelectorAll('.quick-sell-ask-btn, .quick-sell-bid-btn').forEach(btn => {
+                btn.remove();
+            });
+        }
+
+        checkAndAddSellButtons() {
+            if (!this.isEnabled) return;
+            try {
+                // 检查是否出现物品菜单
+                const itemMenu = document.querySelector('.Item_actionMenu__2yUcG');
+                if (itemMenu && !this.processedMenus.has(itemMenu)) {
+                    this.addQuickSellButtons(itemMenu);
+                    this.processedMenus.add(itemMenu);
+                }
+            } catch (error) {
+                console.error('检查菜单失败:', error);
+            }
+        }
+
+        addQuickSellButtons(menuContainer) {
+            // 检查是否已存在出售按钮
+            if (menuContainer.querySelector('.quick-sell-ask-btn') ||
+                menuContainer.querySelector('.quick-sell-bid-btn')) {
+                return;
+            }
+
+            // 检查是否存在数量输入框，如果没有就不显示快速出售按钮
+            const quantityInput = menuContainer.querySelector('.Input_input__2-t98');
+            if (!quantityInput) {
+                return;
+            }
+
+            // 创建"左一出售"按钮（按ask价挂单）
+            const askSellButton = document.createElement('button');
+            askSellButton.className = 'Button_button__1Fe9z Button_sell__3FNpM Button_fullWidth__17pVU quick-sell-ask-btn';
+            askSellButton.textContent = LANG.quickSell.askSell;
+
+            // 创建"右一出售"按钮（按bid价直售）
+            const bidSellButton = document.createElement('button');
+            bidSellButton.className = 'Button_button__1Fe9z Button_sell__3FNpM Button_fullWidth__17pVU quick-sell-bid-btn';
+            bidSellButton.textContent = LANG.quickSell.bidSell;
+
+            // 初始化按钮状态
+            this.buttonStates.set(askSellButton, {
+                confirmed: false,
+                sellType: 'ask',
+                originalText: LANG.quickSell.askSell,
+                confirmText: LANG.quickSell.confirmAskSell,
+                timeout: null,
+                enableTimeout: null
+            });
+            this.buttonStates.set(bidSellButton, {
+                confirmed: false,
+                sellType: 'bid',
+                originalText: LANG.quickSell.bidSell,
+                confirmText: LANG.quickSell.confirmBidSell,
+                timeout: null,
+                enableTimeout: null
+            });
+
+            // 添加点击事件
+            askSellButton.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                this.handleButtonClick(askSellButton, menuContainer);
+            });
+
+            bidSellButton.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                this.handleButtonClick(bidSellButton, menuContainer);
+            });
+
+            menuContainer.appendChild(askSellButton);
+            menuContainer.appendChild(bidSellButton);
+        }
+
+        handleButtonClick(button, menuContainer) {
+            if (this.isProcessing) {
+                return;
+            }
+
+            const state = this.buttonStates.get(button);
+            if (!state) return;
+
+            if (!state.confirmed) {
+                this.enterConfirmState(button, state);
+            } else {
+                if (!button.disabled) {
+                    this.performQuickSell(menuContainer, state.sellType, button);
+                }
+            }
+        }
+
+        enterConfirmState(button, state) {
+            // 清除之前的超时
+            if (state.timeout) {
+                clearTimeout(state.timeout);
+            }
+            if (state.enableTimeout) {
+                clearTimeout(state.enableTimeout);
+            }
+
+            button.className = 'Button_button__1Fe9z Button_warning__1-AMI Button_fullWidth__17pVU Button_disabled__wCyIq';
+            button.textContent = state.confirmText;
+            button.disabled = true;
+            state.confirmed = true;
+
+            state.enableTimeout = setTimeout(() => {
+                button.className = 'Button_button__1Fe9z Button_warning__1-AMI Button_fullWidth__17pVU';
+                button.disabled = false;
+            }, 500);
+        }
+
+        resetButtonState(button, state) {
+            if (state.timeout) {
+                clearTimeout(state.timeout);
+                state.timeout = null;
+            }
+            if (state.enableTimeout) {
+                clearTimeout(state.enableTimeout);
+                state.enableTimeout = null;
+            }
+
+            button.className = 'Button_button__1Fe9z Button_sell__3FNpM Button_fullWidth__17pVU';
+            button.textContent = state.originalText;
+            button.disabled = false;
+            state.confirmed = false;
+        }
+
+        async performQuickSell(menuContainer, sellType, button) {
+            if (this.isProcessing) {
+                return;
+            }
+
+            this.isProcessing = true;
+            const state = this.buttonStates.get(button);
+
+            try {
+                // 获取物品信息
+                const itemInfo = this.extractItemInfo(menuContainer);
+
+                // 获取出售数量
+                const quantity = this.getQuantity(menuContainer);
+
+                // 显示开始出售的提示
+                const startMessage = sellType === 'ask' ? LANG.quickSell.startListing : LANG.quickSell.startInstantSell;
+                this.showToast(`${startMessage}: ${itemInfo.name} x${quantity}`, 'info');
+
+                // 获取市场数据
+                const marketData = await this.getMarketData(itemInfo.itemHrid);
+                if (!marketData) {
+                    throw new Error(LANG.quickSell.noMarketData);
+                }
+
+                // 计算价格
+                const price = this.calculatePrice(marketData, itemInfo.enhancementLevel, quantity, sellType);
+                if (!price || price <= 0) {
+                    throw new Error(`${LANG.quickSell.getPriceFailed}: ${sellType}`);
+                }
+
+                // 执行出售
+                const isInstantSell = sellType === 'bid'; // bid是直售，ask是挂单
+                await this.executeSell(itemInfo, quantity, price, isInstantSell);
+
+                // 出售成功后重置按钮状态
+                this.resetButtonState(button, state);
+
+            } catch (error) {
+                console.error(LANG.quickSell.sellFailed + ':', error);
+                this.showToast(`${LANG.quickSell.sellFailed}: ${error.message}`, 'error');
+                // 出售失败也重置按钮状态
+                this.resetButtonState(button, state);
+            } finally {
+                this.isProcessing = false;
+            }
+        }
+
+        extractItemInfo(menuContainer) {
+            try {
+                // 获取物品名称
+                const itemNameElement = menuContainer.querySelector('.Item_name__2C42x');
+                const itemName = itemNameElement?.textContent?.trim();
+
+                // 获取React props
+                const reactKey = Object.keys(menuContainer).find(key => key.startsWith('__reactProps'));
+                const itemInfo = menuContainer[reactKey]?.children[0]._owner.memoizedProps;
+
+                if (!itemInfo || !itemName) {
+                    return null;
+                }
+
+                return {
+                    name: itemName,
+                    itemHrid: itemInfo.itemHrid,
+                    enhancementLevel: itemInfo.enhancementLevel || 0
+                };
+            } catch (error) {
+                console.error(LANG.quickSell.extractItemInfoFailed + ':', error);
+                return null;
+            }
+        }
+
+        getQuantity(menuContainer) {
+            try {
+                const quantityInput = menuContainer.querySelector('.Input_input__2-t98');
+                return parseInt(quantityInput.value);
+            } catch (error) {
+                throw error;
+            }
+        }
+
+        async getMarketData(itemHrid) {
+            try {
+                const fullItemHrid = itemHrid.startsWith('/items/') ? itemHrid : `/items/${itemHrid}`;
+
+                // 检查缓存
+                const cached = window.marketDataCache?.get(fullItemHrid);
+                if (cached && Date.now() - cached.timestamp < 60000) {
+                    return cached.data;
+                }
+
+                // 等待市场数据响应
+                const responsePromise = window.PGE.waitForMessage(
+                    'market_item_order_books_updated',
+                    8000,
+                    (responseData) => responseData.marketItemOrderBooks?.itemHrid === fullItemHrid
+                );
+
+                // 请求市场数据
+                window.PGE.core.handleGetMarketItemOrderBooks(fullItemHrid);
+
+                const response = await responsePromise;
+                return response.marketItemOrderBooks;
+            } catch (error) {
+                console.error(LANG.quickSell.getMarketDataFailed + ':', error);
+                return null;
+            }
+        }
+
+        calculatePrice(marketData, enhancementLevel, quantity, sellType) {
+            try {
+                if (sellType === 'ask') {
+                    // 左一出售：按ask价挂单（参考卖单价格）
+                    return this.analyzeAskPrice(marketData, enhancementLevel);
+                } else {
+                    // 右一出售：按bid价直售（卖给买单）
+                    return this.analyzeBidPrice(marketData, enhancementLevel, quantity);
+                }
+            } catch (error) {
+                console.error(LANG.quickSell.getPriceFailed + ':', error);
+                return null;
+            }
+        }
+
+        analyzeAskPrice(marketData, enhancementLevel) {
+            const asks = marketData.orderBooks?.[enhancementLevel]?.asks;
+            if (!asks?.length) {
+                return null;
+            }
+
+            // 返回最低卖单价格，用于挂单竞争
+            return asks[0].price;
+        }
+
+        analyzeBidPrice(marketData, enhancementLevel, quantity) {
+            const bids = marketData.orderBooks?.[enhancementLevel]?.bids;
+            if (!bids?.length) {
+                return null;
+            }
+
+            // 分析能够出售的数量和价格
+            let cumulativeQuantity = 0;
+            let targetPrice = 0;
+
+            for (const bid of bids) {
+                const canSellToThisOrder = Math.min(bid.quantity, quantity - cumulativeQuantity);
+                cumulativeQuantity += canSellToThisOrder;
+                targetPrice = bid.price;
+
+                if (cumulativeQuantity >= quantity) break;
+            }
+
+            if (cumulativeQuantity < quantity) {
+                console.warn(`${LANG.quickSell.marketOrdersInsufficient} ${cumulativeQuantity}${LANG.quickSell.needed} ${quantity}`);
+            }
+
+            return targetPrice;
+        }
+
+        async executeSell(itemInfo, quantity, price, isInstantSell) {
+            try {
+                const fullItemHrid = itemInfo.itemHrid.startsWith('/items/') ?
+                    itemInfo.itemHrid : `/items/${itemInfo.itemHrid}`;
+
+                if (isInstantSell) {
+                    // 直售（卖给买单）
+                    await this.executeInstantSell(fullItemHrid, itemInfo.enhancementLevel, quantity, price, itemInfo.name);
+                } else {
+                    // 挂单出售
+                    await this.executeListing(fullItemHrid, itemInfo.enhancementLevel, quantity, price, itemInfo.name);
+                }
+            } catch (error) {
+                console.error(LANG.quickSell.executeSellFailed + ':', error);
+                throw error;
+            }
+        }
+
+        async executeInstantSell(itemHrid, enhancementLevel, quantity, price, itemName) {
+            const successPromise = window.PGE.waitForMessage(
+                'info',
+                15000,
+                (responseData) => responseData.message === 'infoNotification.sellOrderCompleted'
+            );
+
+            const errorPromise = window.PGE.waitForMessage('error', 15000);
+
+            window.PGE.core.handlePostMarketOrder(true, itemHrid, enhancementLevel, quantity, price, true);
+
+            try {
+                await Promise.race([
+                    successPromise,
+                    errorPromise.then(errorData => Promise.reject(new Error(errorData.message || LANG.quickSell.instantSellFailed)))
+                ]);
+
+                this.showToast(`✅ ${LANG.quickSell.instantSellSuccess}: ${itemName} x${quantity} @ ${price}`, 'success');
+            } catch (error) {
+                this.showToast(`❌ ${LANG.quickSell.instantSellFailed}: ${itemName}`, 'error');
+                throw error;
+            }
+        }
+
+        async executeListing(itemHrid, enhancementLevel, quantity, price, itemName) {
+            const successPromise = window.PGE.waitForMessage(
+                'info',
+                15000,
+                (responseData) => responseData.message === 'infoNotification.sellListingProgress'
+            );
+
+            const errorPromise = window.PGE.waitForMessage('error', 15000);
+
+            window.PGE.core.handlePostMarketOrder(true, itemHrid, enhancementLevel, quantity, price, false);
+
+            try {
+                await Promise.race([
+                    successPromise,
+                    errorPromise.then(errorData => Promise.reject(new Error(errorData.message || LANG.quickSell.listingFailed)))
+                ]);
+
+                this.showToast(`✅ ${LANG.quickSell.listingSuccess}: ${itemName} x${quantity} @ ${price}`, 'success');
+            } catch (error) {
+                this.showToast(`❌ ${LANG.quickSell.listingFailed}: ${itemName}`, 'error');
+                throw error;
+            }
+        }
+
+        showToast(message, type) {
+            if (window.MWIModules?.toast) {
+                window.MWIModules.toast.show(message, type);
+            } else {
+                console.log(`${message}`);
+            }
+        }
+
+        // 清理资源
+        cleanup() {
+            this.processedMenus = new WeakSet();
+            this.isProcessing = false;
+            // 清理所有按钮的超时
+            for (const [button, state] of this.buttonStates) {
+                if (state.timeout) {
+                    clearTimeout(state.timeout);
+                }
+                if (state.enableTimeout) {
+                    clearTimeout(state.enableTimeout);
+                }
+            }
+            this.buttonStates = new WeakMap();
+        }
+    }
+
     // ==================== 全局样式 ====================
     function addGlobalButtonStyles() {
         const style = document.createElement('style');
@@ -7411,6 +8319,10 @@
             } else {
                 console.log(`[PGE] 物品价值计算器未启用：角色模式为 ${characterData?.gameMode || 'Unknown'}`);
             }
+        }
+
+        if (PGE_CONFIG.quickSell) {
+            window.MWIModules.quickSell = new QuickSellManager();
         }
 
         if (PGE_CONFIG.gatheringEnhanced) {
@@ -7575,16 +8487,8 @@
             console.error('[PGE] Page monitoring setup failed:', error);
         });
 
-        // 3. 延迟初始化角色切换器
-        if (PGE_CONFIG.characterSwitcher) {
-            setTimeout(() => {
-                try {
-                    window.MWIModules.characterSwitcher = new CharacterSwitcher();
-                } catch (error) {
-                    console.error('[PGE] Character switcher initialization failed:', error);
-                }
-            }, 1000);
-        }
+        // 3. 初始化角色切换器
+        window.MWIModules.characterSwitcher = new CharacterSwitcher();
 
         console.log('[PGE] Initialization sequence started');
     }
@@ -7602,4 +8506,5 @@
 
     // ==================== 启动 ====================
     startInitializationSequence();
+    window.HackTimer = new HackTimer();
 })();

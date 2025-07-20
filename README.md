@@ -1,44 +1,54 @@
 #  [银河奶牛] 生产采集增强 / MWI Production & Gathering Enhanced
 
-计算制造、烹饪、强化、房屋所需材料并一键购买，计算实时炼金利润，增加按照目标材料数量进行采集的功能，快速切换角色。
+计算生产、强化、房屋所需材料并一键购买；显示今日资产增量，统计30天总资产生成走势图；计算生产与炼金实时利润；按照目标材料数量进行采集；快速切换角色；自动收集市场订单；功能支持自定义开关。
 
-*Calculate materials for crafting, cooking, enhancing, housing with one-click purchase, calculate real-time alchemy profits, add target-based gathering functionality, fast character switching.*
+*Calculates the materials required for production, enhancement, and housing, and allows one-click purchasing; displays today's asset growth and generates a 30-day total asset trend chart; calculates real-time profit for production and alchemy; gathers resources based on target material quantities; supports quick character switching; automatically collects market orders; all features support customizable toggles.*
 
 ---
 
-## ✨ 主要功能 / Key Features
+## ✨ 主要功能 / Key Features 
+ 
+### 🧮 材料自动计算 / Auto Material Calculation 
+- **自动计算**：自动计算并列出你当前缺少的所有材料数量 
+- **多种场景**：支持生产、强化、房屋等材料计算 
+ 
+*Automatically calculates and lists all missing materials with real-time updates for crafting, cooking, enhancing, and housing scenarios.* 
+ 
+### 🛒 一键购买 / One-Click Purchase 
+- **左一购买**：直接从市场购买 
+- **右一求购**：按最高求购出价提交求购订单 
+- **批量处理**：自动处理多种材料的购买流程 
+- **购物车**：加入购物车，保存购物清单，导入导出购物清单 
+ 
+*Supports instant purchase at lowest ask price and bid orders at highest bid price with batch processing. Includes shopping cart with save/load/import/export functionality.* 
+ 
+### 📊 炼金 & 生产利润分析 / Alchemy & Production Profit Analysis 
+- **实时计算**：根据当前市场价格实时计算炼金收益 
+- **四重模式**：左买右卖，左买左卖，右买右卖，右买左卖 
+- **全面考虑**：纳入buff效果、饮料加成、装备属性、催化剂效果等 
+ 
+*Real-time profit calculation for alchemy and production with 4 pricing modes (ask-buy-bid-sell, ask-buy-ask-sell, bid-buy-bid-sell, bid-buy-ask-sell), considering all buffs, consumables, equipment bonuses, and catalyst effects.* 
+ 
+### 🎯 采集增强 / Gathering Enhanced 
+- **按目标数量采集**：完成设定目标数量后自动停止 
+ 
+*Set target quantities for gathering actions with automatic stop when the specified amount is reached.* 
+ 
+### 🔄 快速角色切换 / Fast Character Switching 
+- **一键切换**：点击头像即可快速切换角色 
+ 
+*Click avatar to quickly switch between characters with online status display, smart caching, and clear game mode indicators.* 
 
-### 🧮 材料自动计算 / Auto Material Calculation
-- **自动计算**：自动计算并列出你当前缺少的所有材料数量
-- **多种场景**：支持制造、烹饪、强化、房屋等材料计算
+### 🎁 自动收集市场订单 / Auto Claim Market Listings
+- **自动收集**：当有市场订单可收集时自动收集物品或金币
 
-*Precisely calculates and lists all missing materials with real-time updates for crafting, cooking, enhancing, and housing.*
+*Automatically claims items or coins when market listings are available for collection.*
 
-### 🛒 一键购买 / One-Click Purchase
-- **左一购买**：直接从市场购买
-- **右一求购**：按最高求购出价提交求购订单
-- **批量处理**：自动处理多种材料的购买流程
+### 💰 总资产统计 / Daily Asset Tracking
+- **每日增量**：在背包界面显示每日资产增量
+- **趋势图表**：点击查看30天资产变化趋势图表
 
-*Supports both instant purchase at lowest ask price and bid orders at highest bid price with batch processing.*
-
-### 📊 炼金利润分析 / Alchemy Profit Analysis
-- **实时计算**：根据当前市场价格实时计算炼金收益
-- **双重模式**：
-  - **悲观日利润**：基于左买右卖的保守估算
-  - **乐观日利润**：基于右买左卖的激进估算
-- **全面考虑**：纳入buff效果、饮料加成、装备属性、催化剂效果等
-
-*Real-time alchemy profit calculation with pessimistic and optimistic modes, considering all buffs, consumables, equipment, and catalyst effects.*
-
-### 🎯 采集增强 / Gathering Enhanced
-- **按目标数量采集**：完成设定目标数量后自动停止
-
-*Set target quantities for gathering actions with automatic stop when reached.*
-
-### 🔄 快速角色切换 / Fast Character Switching
-- **一键切换**：点击头像即可快速切换角色
-
-*Click avatar to quickly switch between characters with bilingual support, smart caching, and clear game mode indicators.*
+*Displays daily asset increment in inventory interface with clickable trend chart showing 30-day asset change analysis.*
 
 ---
 
@@ -63,6 +73,8 @@
 | ![采集界面](img/05.png) | ![Gathering Interface](img/06.png) |
 | ![设置界面](img/07.png) | ![Setting Interface](img/08.png) |
 | ![购物车界面](img/09.png) | ![Cart Interface](img/10.png) |
+| ![今日增量界面](img/11.png) | ![Today\'s Increment Interface](img/12.png) |
+| ![图表界面](img/13.png) | ![Chart Interface](img/14.png) |
 <img src="img/01.gif" width="100%">
 
 ---
@@ -93,9 +105,11 @@
 
 ## 🔄 更新日志 / Changelog
 
-最近版本：**v3.5.2**（2025-07-17）  
-- 🔧 优化炼金计算器逻辑  
-- 🔧 优化脚本初始化流程  
+最近版本：**v3.6.0**（2025-07-20）  
+- 🆕 炼金和生产利润计算支持选择是否考虑稀有掉落  
+- 🆕 新增“今日资产增量”显示按钮  
+- 🆕 新增角色资产走势图，支持统计最多 30 天  
+- 🆕 新增快速出售功能
 
 **👉 [查看完整更新日志](./CHANGELOG.md)**
 
