@@ -3,7 +3,7 @@
 // @name:zh-CN   [银河奶牛]生产采集增强
 // @name:en      MWI Production & Gathering Enhanced
 // @namespace    http://tampermonkey.net/
-// @version      3.6.1
+// @version      3.6.2
 // @description  计算生产、强化、房屋所需材料并一键购买；显示今日资产增量，统计30天总资产生成走势图；计算生产与炼金实时利润；按照目标材料数量进行采集；快速切换角色；自动收集市场订单；功能支持自定义开关。
 // @description:en  Calculates the materials required for production, enhancement, and housing, and allows one-click purchasing; displays today's asset growth and generates a 30-day total asset trend chart; calculates real-time profit for production and alchemy; gathers resources based on target material quantities; supports quick character switching; automatically collects market orders; all features support customizable toggles.
 // @author       XIxixi297
@@ -1553,7 +1553,7 @@
                 }
             ];
             this.versionInfo = {
-                current: "3.6.1", // 当前版本
+                current: "3.6.2", // 当前版本
                 latest: null,
                 updateTime: null,
                 changelog: null
@@ -8138,46 +8138,31 @@
         }
 
         async getMarketData(itemHrid) {
-            return new Promise((resolve, reject) => {
+            try {
                 const fullItemHrid = itemHrid.startsWith('/items/') ? itemHrid : `/items/${itemHrid}`;
 
                 // 检查缓存
-                if (this.marketData[fullItemHrid] && !utils.isCacheExpired(fullItemHrid, this.marketTimestamps, this.cacheExpiry)) {
-                    return resolve(this.marketData[fullItemHrid]);
+                const cached = window.marketDataCache?.get(fullItemHrid);
+                if (cached && Date.now() - cached.timestamp < 60000) {
+                    return cached.data;
                 }
 
-                if (!this.initialized || !window.PGE?.core) {
-                    return reject(new Error('PGE核心未初始化'));
-                }
-
-                // 设置超时
-                const timeout = setTimeout(() => {
-                    reject(new Error(`获取市场数据超时: ${fullItemHrid}`));
-                }, 10000); // 10秒超时
-
-                // 监听响应
-                const cleanup = window.PGE.hookMessage('market_item_order_books_updated', (responseData) => {
-                    if (responseData.marketItemOrderBooks?.itemHrid === fullItemHrid) {
-                        clearTimeout(timeout);
-                        cleanup(); // 清理监听器
-
-                        const orderBooks = responseData.marketItemOrderBooks.orderBooks;
-                        this.marketData[fullItemHrid] = orderBooks;
-                        this.marketTimestamps[fullItemHrid] = Date.now();
-
-                        resolve(orderBooks);
-                    }
-                });
+                // 等待市场数据响应
+                const responsePromise = window.PGE.waitForMessage(
+                    'market_item_order_books_updated',
+                    8000,
+                    (responseData) => responseData.marketItemOrderBooks?.itemHrid === fullItemHrid
+                );
 
                 // 请求市场数据
-                try {
-                    window.PGE.core.handleGetMarketItemOrderBooks(fullItemHrid);
-                } catch (error) {
-                    clearTimeout(timeout);
-                    cleanup();
-                    reject(new Error(`请求市场数据失败: ${error.message}`));
-                }
-            });
+                window.PGE.core.handleGetMarketItemOrderBooks(fullItemHrid);
+
+                const response = await responsePromise;
+                return response.marketItemOrderBooks;
+            } catch (error) {
+                console.error(LANG.quickSell.getMarketDataFailed + ':', error);
+                return null;
+            }
         }
 
         calculatePrice(marketData, enhancementLevel, quantity, sellType) {

@@ -1,5 +1,5 @@
 {
-    "version": "3.6.1",
+    "version": "3.6.2",
     "update_time": "2025-07-21",
-    "changelog": "修复总资产计算缺失数据的bug，增加健壮性"
+    "changelog": "修复快速购买功能"
 }
