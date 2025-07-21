@@ -1,5 +1,5 @@
 {
-    "version": "3.6.2",
+    "version": "3.6.3",
     "update_time": "2025-07-21",
-    "changelog": "修复快速出售功能"
+    "changelog": "优化材料数量计算和利润计算，考虑暴饮的影响"
 }

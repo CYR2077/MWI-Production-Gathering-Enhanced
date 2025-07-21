@@ -3,7 +3,7 @@
 // @name:zh-CN   [银河奶牛]生产采集增强
 // @name:en      MWI Production & Gathering Enhanced
 // @namespace    http://tampermonkey.net/
-// @version      3.6.2
+// @version      3.6.3
 // @description  计算生产、强化、房屋所需材料并一键购买；显示今日资产增量，统计30天总资产生成走势图；计算生产与炼金实时利润；按照目标材料数量进行采集；快速切换角色；自动收集市场订单；功能支持自定义开关。
 // @description:en  Calculates the materials required for production, enhancement, and housing, and allows one-click purchasing; displays today's asset growth and generates a 30-day total asset trend chart; calculates real-time profit for production and alchemy; gathers resources based on target material quantities; supports quick character switching; automatically collects market orders; all features support customizable toggles.
 // @author       XIxixi297
@@ -1237,7 +1237,7 @@
             const [url] = args;
             const ws = new OriginalWebSocket(...args);
 
-            if (typeof url === 'string' && url.includes('api.milkywayidle.com/ws')) {
+            if (typeof url === 'string' && url.includes('milkywayidle.com/ws')) {
                 window.wsInstances.push(ws);
                 window.currentWS = ws;
 
@@ -1553,7 +1553,7 @@
                 }
             ];
             this.versionInfo = {
-                current: "3.6.2", // 当前版本
+                current: "3.6.3", // 当前版本
                 latest: null,
                 updateTime: null,
                 changelog: null
@@ -3771,6 +3771,45 @@
             return levelBuffMap[buffTypeHrid] || null;
         }
 
+        // 获取工匠茶buff效果
+        getArtisanBuff(container) {
+            try {
+                const props = utils.getReactProps(container);
+                if (!props) return 0.0;
+
+                const buffs = props.actionBuffs || [];
+                let artisanBuff = 0.0;
+
+                for (const buff of buffs) {
+                    if (buff.typeHrid === '/buff_types/artisan') {
+                        artisanBuff += (buff.flatBoost || 0.0);
+                    }
+                }
+
+                return artisanBuff;
+            } catch (error) {
+                console.error('获取工匠茶buff失败:', error);
+                return 0.0;
+            }
+        }
+
+        // 获取基础材料消耗量
+        getBaseMaterialConsumption(materialContainer, index) {
+            try {
+                const reactKey = Object.keys(materialContainer).find(key => key.startsWith('__reactProps$'));
+                if (reactKey) {
+                    const props = materialContainer[reactKey];
+                    const baseCount = props?.children?._owner?.memoizedProps?.count;
+                    if (typeof baseCount === 'number') {
+                        return baseCount;
+                    }
+                }
+            } catch (error) {
+                console.error('获取基础材料消耗量失败:', error);
+            }
+            return 1.0; // 默认值
+        }
+
         async calculateBuffEffectsAndCosts() {
             const container = document.querySelector('.SkillActionDetail_regularComponent__3oCgr');
             const props = utils.getReactProps(container);
@@ -3856,40 +3895,128 @@
                 result.count = 1.0;
             } else if (isOutput) {
                 const outputContainer = element.closest('.SkillActionDetail_item__2vEAz');
-                const countText = outputContainer?.querySelector('div:first-child')?.textContent || '1';
-                result.count = parseFloat(utils.cleanNumber(countText)) || 1.0;
+                let baseCount = 1.0;
+
+                // 尝试从UI获取基础数量
+                const key = Object.keys(outputContainer.children[1] || {}).find(k => k.startsWith('__reactProps$'));
+                const props = outputContainer.children[1][key]?.children?._owner?.memoizedProps;
+
+                baseCount = props?.count || 1.0;
+
+                // 检查是否是第一个产出物品（通常是主要产品）
+                const container = document.querySelector('.SkillActionDetail_regularComponent__3oCgr');
+                const outputElements = container?.querySelectorAll('.SkillActionDetail_outputItems__3zp_f .Item_itemContainer__x7kH1') || [];
+                const isFirstOutput = outputElements.length > 0 && outputElements[0] === element;
+
+                if (isFirstOutput) {
+                    // 对第一个产出物品应用美食buff: 1+gourmetBuff
+                    const gourmetBuff = this.getGourmetBuff(container);
+                    result.count = baseCount * (1 + gourmetBuff);
+                } else {
+                    // 其他产出物品使用原来的逻辑
+                    result.count = baseCount;
+                }
             } else if (isRequirement) {
+                // 获取基础材料消耗量并应用工匠茶效果
+                const container = document.querySelector('.SkillActionDetail_regularComponent__3oCgr');
                 const requirementRow = element.closest('.SkillActionDetail_itemRequirements__3SPnA');
-                const allCounts = requirementRow?.querySelectorAll('.SkillActionDetail_inputCount__1rdrn');
                 const itemElements = requirementRow?.querySelectorAll('.Item_itemContainer__x7kH1');
                 let itemIndex = 0;
                 if (itemElements) {
                     for (let i = 0; i < itemElements.length; i++) {
-                        if (itemElements[i].contains(element)) {
+                        if (itemElements[i].contains(element) || itemElements[i] === element) {
                             itemIndex = i;
                             break;
                         }
                     }
                 }
-                const countElement = allCounts ? allCounts[itemIndex] : null;
-                const rawText = countElement?.textContent || '1';
-                const cleanText = rawText.replace(/[^\d.,]/g, '');
-                result.count = parseFloat(utils.cleanNumber(cleanText)) || 1.0;
+
+                // 获取基础消耗量
+                const baseConsumption = this.getBaseMaterialConsumption(element, itemIndex);
+
+                // 应用工匠茶效果
+                const artisanBuff = this.getArtisanBuff(container);
+                result.count = baseConsumption * (1 - artisanBuff);
             }
 
             return result;
         }
 
         getActionTime() {
-            const allTimeElements = document.querySelectorAll('.SkillActionDetail_value__dQjYH');
-            for (let i = allTimeElements.length - 1; i >= 0; i--) {
-                const text = allTimeElements[i].textContent;
-                if (text.includes('s') && !text.includes('%')) {
-                    const match = text.match(/([\d.,]+)s/);
-                    if (match) return parseFloat(utils.cleanNumber(match[1]));
+            try {
+                const container = document.querySelector('.SkillActionDetail_regularComponent__3oCgr');
+                if (!container) return 0.0;
+
+                const props = utils.getReactProps(container);
+                if (!props) return 0.0;
+
+                const baseTimeCost = props.actionDetail?.baseTimeCost;
+                if (!baseTimeCost) return 0.0;
+
+                // 获取速度buff
+                const speedBuff = this.getSpeedBuff(container);
+
+                // 计算实际行动时间: baseTimeCost/1e9/(1+speedBuff)
+                const actionTime = (baseTimeCost / 1e9) / (1 + speedBuff);
+
+                return actionTime;
+            } catch (error) {
+                console.error('获取行动时间失败:', error);
+                // 如果失败，回退到原来的方法
+                const allTimeElements = document.querySelectorAll('.SkillActionDetail_value__dQjYH');
+                for (let i = allTimeElements.length - 1; i >= 0; i--) {
+                    const text = allTimeElements[i].textContent;
+                    if (text.includes('s') && !text.includes('%')) {
+                        const match = text.match(/([\d.,]+)s/);
+                        if (match) return parseFloat(utils.cleanNumber(match[1]));
+                    }
                 }
+                return 0.0;
             }
-            return 0.0;
+        }
+
+        // 获取速度buff效果
+        getSpeedBuff(container) {
+            try {
+                const props = utils.getReactProps(container);
+                if (!props) return 0.0;
+
+                const buffs = props.actionBuffs || [];
+                let speedBuff = 0.0;
+
+                for (const buff of buffs) {
+                    if (buff.typeHrid === '/buff_types/action_speed') {
+                        speedBuff += (buff.flatBoost || 0.0);
+                    }
+                }
+
+                return speedBuff;
+            } catch (error) {
+                console.error('获取速度buff失败:', error);
+                return 0.0;
+            }
+        }
+
+        // 获取美食家buff效果
+        getGourmetBuff(container) {
+            try {
+                const props = utils.getReactProps(container);
+                if (!props) return 0.0;
+
+                const buffs = props.actionBuffs || [];
+                let gourmetBuff = 0.0;
+
+                for (const buff of buffs) {
+                    if (buff.typeHrid === '/buff_types/gourmet') {
+                        gourmetBuff += (buff.flatBoost || 0.0);
+                    }
+                }
+
+                return gourmetBuff;
+            } catch (error) {
+                console.error('获取美食家buff失败:', error);
+                return 0.0;
+            }
         }
 
         parseDropRate(itemHrid) {
@@ -7845,8 +7972,10 @@
 
                 // 根据配置决定是否考虑工匠茶影响
                 if (window.PGE_CONFIG.considerArtisanTea) {
-                    // 考虑工匠茶影响：使用显示的消耗量（已经包含了buff效果）
-                    consumptionPerUnit = parseFloat(utils.cleanNumber(inputCounts[i]?.textContent || '0'));
+                    // 考虑工匠茶影响：使用基础消耗量*(1-artisanBuff)
+                    const baseConsumption = this.getBaseMaterialConsumption(materialContainer, i);
+                    const artisanBuff = this.getArtisanBuff(container);
+                    consumptionPerUnit = baseConsumption * (1 - artisanBuff);
                 } else {
                     // 不考虑工匠茶影响：使用基础消耗量
                     consumptionPerUnit = this.getBaseMaterialConsumption(materialContainer, i);
@@ -7859,6 +7988,28 @@
                     materialName, itemId, supplementNeeded, totalNeeded, currentStock, index: i, type: 'material'
                 });
             });
+        }
+
+        // 获取工匠茶buff效果
+        static getArtisanBuff(container) {
+            try {
+                const props = utils.getReactProps(container);
+                if (!props) return 0.0;
+
+                const buffs = props.actionBuffs || [];
+                let artisanBuff = 0.0;
+
+                for (const buff of buffs) {
+                    if (buff.typeHrid === '/buff_types/artisan') {
+                        artisanBuff += (buff.flatBoost || 0.0);
+                    }
+                }
+
+                return artisanBuff;
+            } catch (error) {
+                console.error('获取工匠茶buff失败:', error);
+                return 0.0;
+            }
         }
 
         //获取基础材料消耗量
