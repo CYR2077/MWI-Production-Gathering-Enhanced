@@ -3,7 +3,7 @@
 // @name:zh-CN   [银河奶牛]生产采集增强
 // @name:en      MWI Production & Gathering Enhanced
 // @namespace    http://tampermonkey.net/
-// @version      3.6.3
+// @version      3.6.4
 // @description  计算生产、强化、房屋所需材料并一键购买；显示今日资产增量，统计30天总资产生成走势图；计算生产与炼金实时利润；按照目标材料数量进行采集；快速切换角色；自动收集市场订单；功能支持自定义开关。
 // @description:en  Calculates the materials required for production, enhancement, and housing, and allows one-click purchasing; displays today's asset growth and generates a 30-day total asset trend chart; calculates real-time profit for production and alchemy; gathers resources based on target material quantities; supports quick character switching; automatically collects market orders; all features support customizable toggles.
 // @author       XIxixi297
@@ -1553,7 +1553,7 @@
                 }
             ];
             this.versionInfo = {
-                current: "3.6.3", // 当前版本
+                current: "3.6.4", // 当前版本
                 latest: null,
                 updateTime: null,
                 changelog: null
@@ -1695,11 +1695,11 @@
                 .custom-settings-tab {
                     transition: all 0.2s ease;
                 }
-                
+
                 .custom-settings-tab:hover {
                     opacity: 0.8;
                 }
-                
+
                 .custom-tab-content {
                     padding: 20px;
                     background: var(--card-background);
@@ -1707,7 +1707,7 @@
                     margin: 16px;
                     border: 1px solid var(--border-separator);
                 }
-                
+
                 .custom-tab-option {
                     display: flex;
                     align-items: center;
@@ -1718,11 +1718,11 @@
                     border: 1px solid var(--item-border);
                     transition: background-color 0.2s;
                 }
-                
+
                 .custom-tab-option:hover {
                     background-color: var(--item-background-hover);
                 }
-                
+
                 .custom-tab-option label {
                     margin-left: 12px;
                     color: var(--color-text-dark-mode);
@@ -1731,13 +1731,13 @@
                     font-size: 14px;
                     line-height: 1.4;
                 }
-                
+
                 .custom-tab-option input[type="checkbox"] {
                     width: 16px;
                     height: 16px;
                     cursor: pointer;
                 }
-                
+
                 .custom-tab-actions {
                     margin-top: 24px;
                     padding-top: 16px;
@@ -1746,7 +1746,7 @@
                     gap: 12px;
                     flex-wrap: wrap;
                 }
-                
+
                 .custom-tab-button {
                     padding: 10px 16px;
                     background-color: rgba(33, 150, 243, 0.8);
@@ -1758,32 +1758,32 @@
                     transition: background-color 0.2s;
                     font-weight: 500;
                 }
-                
+
                 .custom-tab-button:hover {
                     background-color: rgba(33, 150, 243, 0.9);
                 }
-                
+
                 .custom-tab-button:disabled {
                     background-color: rgba(158, 158, 158, 0.5);
                     cursor: not-allowed;
                 }
-                
+
                 .custom-tab-button.danger {
                     background-color: rgba(244, 67, 54, 0.8);
                 }
-                
+
                 .custom-tab-button.danger:hover {
                     background-color: rgba(244, 67, 54, 0.9);
                 }
-                
+
                 .check-update-btn {
                     background-color: rgba(76, 175, 80, 0.8) !important;
                 }
-                
+
                 .check-update-btn:hover {
                     background-color: rgba(76, 175, 80, 0.9) !important;
                 }
-                
+
                 .custom-tab-info {
                     margin-top: 20px;
                     padding: 16px;
@@ -1794,7 +1794,7 @@
                     color: var(--color-text-dark-mode);
                     border: 1px solid var(--item-border);
                 }
-                
+
                 .version-info {
                     margin-bottom: 12px;
                 }
@@ -2060,7 +2060,7 @@
                         <span style="font-size: 12px; opacity: 0.8;">${LANG.settings.quickPurchase.description}</span>
                     </label>
                 </div>
-                
+
                 <div class="custom-tab-option">
                     <input type="checkbox" id="universalProfit" ${window.PGE_CONFIG?.universalProfit ? 'checked' : ''}>
                     <label for="universalProfit">
@@ -2068,7 +2068,7 @@
                         <span style="font-size: 12px; opacity: 0.8;">${LANG.settings.universalProfit.description}</span>
                     </label>
                 </div>
-                
+
                 <div class="custom-tab-option">
                     <input type="checkbox" id="alchemyProfit" ${window.PGE_CONFIG?.alchemyProfit ? 'checked' : ''}>
                     <label for="alchemyProfit">
@@ -2076,7 +2076,7 @@
                         <span style="font-size: 12px; opacity: 0.8;">${LANG.settings.alchemyProfit.description}</span>
                     </label>
                 </div>
-                
+
                 <div class="custom-tab-option">
                     <input type="checkbox" id="gatheringEnhanced" ${window.PGE_CONFIG?.gatheringEnhanced ? 'checked' : ''}>
                     <label for="gatheringEnhanced">
@@ -2084,7 +2084,7 @@
                         <span style="font-size: 12px; opacity: 0.8;">${LANG.settings.gatheringEnhanced.description}</span>
                     </label>
                 </div>
-                
+
                 <div class="custom-tab-option">
                     <input type="checkbox" id="characterSwitcher" ${window.PGE_CONFIG?.characterSwitcher ? 'checked' : ''}>
                     <label for="characterSwitcher">
@@ -2100,7 +2100,7 @@
                         <span style="font-size: 12px; opacity: 0.8;">${LANG.settings.itemValueCalculator.description}</span>
                     </label>
                 </div>
-                
+
                 <div class="custom-tab-actions">
                     <button class="custom-tab-button" onclick="window.settingsTabManager.resetSettings()">
                         ${LANG.settings.resetToDefault}
@@ -2112,7 +2112,7 @@
                         ${LANG.settings.reloadPage}
                     </button>
                 </div>
-                
+
                 <div class="custom-tab-info">
                     <div class="version-info">${this.renderVersionInfoHTML()}</div>
                 </div>
@@ -2663,10 +2663,10 @@
 
                 if (isCurrentCharacter) {
                     characterButton.href = 'javascript:void(0)';
-                    characterButton.style.cursor = 'default';
                     characterButton.addEventListener('click', (e) => {
                         e.preventDefault();
-                        e.stopPropagation();
+                        window.PGE.core.handleViewProfile(character.name);
+                        this.closeDropdown();
                     });
                 } else {
                     characterButton.href = character.link;
@@ -2705,6 +2705,16 @@
                 if (!isCurrentCharacter) {
                     characterButton.addEventListener('mouseover', () => Object.assign(characterButton.style, hoverStyle));
                     characterButton.addEventListener('mouseout', () => Object.assign(characterButton.style, buttonStyle));
+                }else {
+                    // 当前角色的悬停效果（稍微不同的颜色）
+                    characterButton.addEventListener('mouseover', () => {
+                        characterButton.style.backgroundColor = 'rgba(33, 150, 243, 0.3)';
+                        characterButton.style.borderColor = 'rgba(33, 150, 243, 0.6)';
+                    });
+                    characterButton.addEventListener('mouseout', () => {
+                        characterButton.style.backgroundColor = 'rgba(33, 150, 243, 0.2)';
+                        characterButton.style.borderColor = 'rgba(33, 150, 243, 0.4)';
+                    });
                 }
 
                 dropdown.appendChild(characterButton);
@@ -5185,7 +5195,7 @@
                 align-items: center;
                 justify-content: center;
             }
-            
+
             .asset-chart-modal-content {
                 background-color: #191c2b;
                 color: #FFFFFF;
@@ -5201,7 +5211,7 @@
                 flex-direction: column;
                 box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
             }
-            
+
             .asset-chart-header {
                 display: flex;
                 justify-content: space-between;
@@ -5210,13 +5220,13 @@
                 padding-bottom: 10px;
                 border-bottom: 1px solid #444;
             }
-            
+
             .asset-chart-title {
                 font-size: 24px;
                 font-weight: bold;
                 margin: 0;
             }
-            
+
             .asset-chart-controls {
                 display: flex;
                 gap: 15px;
@@ -5224,13 +5234,13 @@
                 margin-bottom: 20px;
                 flex-wrap: wrap;
             }
-            
+
             .asset-chart-time-range {
                 display: flex;
                 gap: 8px;
                 align-items: center;
             }
-            
+
             .asset-chart-time-btn {
                 padding: 8px 16px;
                 background-color: rgba(255, 255, 255, 0.1);
@@ -5241,29 +5251,29 @@
                 font-size: 12px;
                 transition: all 0.2s;
             }
-            
+
             .asset-chart-time-btn:hover {
                 background-color: rgba(255, 255, 255, 0.2);
             }
-            
+
             .asset-chart-time-btn.active {
                 background-color: rgba(33, 150, 243, 0.8);
                 border-color: rgba(33, 150, 243, 1);
             }
-            
+
             .asset-chart-canvas-container {
                 flex: 1;
                 position: relative;
                 min-height: 0;
             }
-            
+
             .asset-chart-canvas {
                 background-color: #191c2b;
                 border-radius: 4px;
                 width: 100% !important;
                 height: 100% !important;
             }
-            
+
             .asset-chart-close-btn {
                 position: absolute;
                 top: 15px;
@@ -5278,11 +5288,11 @@
                 transition: background-color 0.2s;
                 z-index: 10001;
             }
-            
+
             .asset-chart-close-btn:hover {
                 background-color: rgba(255, 255, 255, 0.1);
             }
-            
+
             .asset-chart-info-panel {
                 display: flex;
                 gap: 20px;
@@ -5311,7 +5321,7 @@
                     top: 0;
                     left: 0;
                 }
-                
+
                 .asset-chart-close-btn {
                     position: absolute;
                     top: 10px;
@@ -5319,16 +5329,16 @@
                     font-size: 28px;
                     z-index: 10001;
                 }
-                
+
                 .asset-chart-controls {
                     flex-direction: column;
                     gap: 10px;
                 }
-                
+
                 .asset-chart-time-range {
                     justify-content: center;
                 }
-                
+
                 .asset-chart-title {
                     font-size: 20px;
                 }
@@ -6478,6 +6488,13 @@
                     return;
                 }
 
+                const itemIcon = e.target.closest('[data-item-icon]');
+                if (itemIcon) {
+                    const itemId = itemIcon.dataset.itemIcon;
+                    window.PGE.core.handleGoToMarketplace(`/items/${itemId}`, 0);
+                    return;
+                }
+
                 const loadBtn = e.target.closest('[data-load-list]');
                 if (loadBtn) {
                     e.stopPropagation();
@@ -7028,7 +7045,7 @@
                             border-radius: 6px;
                             transition: all 0.2s ease;
                         " onmouseenter="this.style.backgroundColor='var(--item-background-hover)'; this.style.borderColor='var(--item-border-hover)'" onmouseleave="this.style.backgroundColor='var(--item-background)'; this.style.borderColor='var(--item-border)'">
-                            <div style="
+                            <div data-item-icon="${itemId}" style="
                                 width: 32px;
                                 height: 32px;
                                 margin-right: 12px;
@@ -7037,6 +7054,7 @@
                                 justify-content: center;
                                 background: var(--item-background);
                                 border-radius: 4px;
+                                cursor: pointer;
                             ">
                                 <svg width="100%" height="100%" style="max-width: 24px; max-height: 24px;">
                                     <use href="/static/media/items_sprite.6d12eb9d.svg${item.iconHref}"></use>
