@@ -2705,7 +2705,7 @@
                 if (!isCurrentCharacter) {
                     characterButton.addEventListener('mouseover', () => Object.assign(characterButton.style, hoverStyle));
                     characterButton.addEventListener('mouseout', () => Object.assign(characterButton.style, buttonStyle));
-                }else {
+                } else {
                     // 当前角色的悬停效果（稍微不同的颜色）
                     characterButton.addEventListener('mouseover', () => {
                         characterButton.style.backgroundColor = 'rgba(33, 150, 243, 0.3)';
@@ -3276,6 +3276,28 @@
             }
         }
 
+        getTeaBuffDuration(container) {
+            try {
+                const props = utils.getReactProps(container);
+                if (!props) return 300.0; // 默认300秒
+
+                const buffs = props.actionBuffs || [];
+
+                // 查找uniqueHrid结尾为'tea'的buff
+                for (const buff of buffs) {
+                    if (buff.uniqueHrid && buff.uniqueHrid.endsWith('tea')) {
+                        const duration = buff.duration || 0;
+                        return duration / 1e9; // 转换为秒
+                    }
+                }
+
+                return 300.0; // 如果没找到茶类buff，默认300秒
+            } catch (error) {
+                console.error('获取茶类buff持续时间失败:', error);
+                return 300.0;
+            }
+        }
+
         async getDrinkCosts() {
             try {
                 const drinkCosts = [];
@@ -3511,7 +3533,9 @@
                         }
                         return sum;
                     }, 0.0);
-                    drinkCostPerSecond = totalDrinkCost / 300.0; // 5分钟
+                    const container = document.querySelector('.SkillActionDetail_alchemyComponent__1J55d');
+                    const teaDuration = this.getTeaBuffDuration(container);
+                    drinkCostPerSecond = totalDrinkCost / teaDuration;
                 }
 
                 const finalProfitPerSecond = profitPerSecond - drinkCostPerSecond;
@@ -3851,6 +3875,28 @@
 
             const drinkCosts = await this.getDrinkCosts();
             return { efficiency: totalEfficiency, drinkCosts };
+        }
+
+        getTeaBuffDuration(container) {
+            try {
+                const props = utils.getReactProps(container);
+                if (!props) return 300.0; // 默认300秒
+
+                const buffs = props.actionBuffs || [];
+
+                // 查找uniqueHrid结尾为'tea'的buff
+                for (const buff of buffs) {
+                    if (buff.uniqueHrid && buff.uniqueHrid.endsWith('tea')) {
+                        const duration = buff.duration || 0;
+                        return duration / 1e9; // 转换为秒
+                    }
+                }
+
+                return 300.0; // 如果没找到茶类buff，默认300秒
+            } catch (error) {
+                console.error('获取茶类buff持续时间失败:', error);
+                return 300.0;
+            }
         }
 
         async getDrinkCosts() {
@@ -4196,7 +4242,9 @@
                     const price = buyType === 'ask' ? item.asks : item.bids;
                     return sum + price;
                 }, 0.0);
-                drinkCostPerSecond = totalDrinkCost / 300.0; // 5分钟
+                const container = document.querySelector('.SkillActionDetail_regularComponent__3oCgr');
+                const teaDuration = this.getTeaBuffDuration(container);
+                drinkCostPerSecond = totalDrinkCost / teaDuration;
             }
 
             const finalProfitPerSecond = profitPerSecond - drinkCostPerSecond;
