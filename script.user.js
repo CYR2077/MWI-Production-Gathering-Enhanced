@@ -132,9 +132,9 @@
         errorUniversal: '计算出错',
 
         addToCart: '加入购物车', add: '已添加', toCart: '到购物车',
-        shoppingCart: '购物车', cartEmpty: '购物车是空的',
-        cartDirectBuy: '批量直购(左一)', cartBidOrder: '批量求购(右一)', cartClear: '清空购物车',
-        cartRemove: '移除', cartQuantity: '数量', cartItem: '项',
+        shoppingCart: '购物车', cartEmpty: '购物车是空的', purchaseAll: '一键购买',
+        cartClear: '清空购物车', directBuyMode: '直购', bidOrderMode: '求购',
+        cartRemove: '移除', cartItem: '项', selectAll: '全选', batchSettings: '批量设置:',
         noMaterialsNeeded: '没有需要补充的材料', addToCartFailed: '添加失败，请稍后重试',
         cartClearSuccess: '已清空购物车', pleaseEnterListName: '请输入清单名称',
         cartEmptyCannotSave: '购物车为空，无法保存', maxListsLimit: '最多只能保存',
@@ -243,7 +243,7 @@
             checkFailed: '检查更新失败，请稍后重试', loadingInfo: '正在获取版本信息...'
         }
     } : {
-        directBuy: 'Buy(Left)', bidOrder: 'Bid(Right)',
+        directBuy: 'Ask(Left)', bidOrder: 'Bid(Right)',
         directBuyUpgrade: 'Left', bidOrderUpgrade: 'Right',
         buying: '⏳ Buying...', submitting: '📋 Submitting...',
         missing: 'Need:', sufficient: 'All materials sufficient!', sufficientUpgrade: 'All upgrades sufficient!',
@@ -267,9 +267,9 @@
         errorUniversal: 'Calculation Error',
 
         addToCart: 'Add to Cart', add: 'Added', toCart: 'to Cart',
-        shoppingCart: 'Shopping Cart', cartEmpty: 'Cart is empty',
-        cartDirectBuy: 'Batch Buy', cartBidOrder: 'Batch Bid', cartClear: 'Clear Cart',
-        cartRemove: 'Remove', cartQuantity: 'Quantity', cartItem: 'items',
+        shoppingCart: 'Shopping Cart', cartEmpty: 'Cart is empty', purchaseAll: 'Purchase All',
+        cartClear: 'Clear Cart', directBuyMode: 'Ask', bidOrderMode: 'Bid',
+        cartRemove: 'Remove', cartItem: 'items', selectAll: 'Select All', batchSettings: 'Batch Settings:',
         noMaterialsNeeded: 'No materials need to be supplemented', addToCartFailed: 'Add failed, please try again later',
         cartClearSuccess: 'Cart cleared', pleaseEnterListName: 'Please enter list name',
         cartEmptyCannotSave: 'Cart is empty, cannot save', maxListsLimit: 'Maximum',
@@ -5957,6 +5957,8 @@
             this.currentListName = '';
             this.wasDragged = false;
             this.cartTabPosition = this.loadCartTabPosition();
+            this.allSelected = true; // 全选状态
+            this.defaultPurchaseMode = 'bid'; // 默认购买方式：bid（求购）
             this.init();
         }
 
@@ -6016,7 +6018,7 @@
                 position: 'fixed',
                 top: '80px',
                 right: '0',
-                width: '380px',
+                width: '450px', // 增加宽度以容纳新功能
                 height: '75vh',
                 backgroundColor: 'rgba(42, 43, 66, 0.95)',
                 border: '1px solid var(--border)',
@@ -6026,7 +6028,7 @@
                 backdropFilter: 'blur(10px)',
                 boxShadow: '-4px 0 20px rgba(0,0,0,0.3)',
                 zIndex: '9999',
-                transform: 'translateX(380px)',
+                transform: 'translateX(450px)',
                 transition: 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
                 display: 'flex',
                 flexDirection: 'column',
@@ -6034,230 +6036,263 @@
             });
 
             this.cartContainer.innerHTML = `
-                    <!-- 购物车标签/触发器 -->
-                    <div id="cart-tab" style="
-                        position: absolute;
-                        left: -40px;
-                        top: ${this.cartTabPosition.y};
-                        transform: translateY(-50%);
-                        width: 40px;
-                        height: 80px;
-                        background: rgba(42, 43, 66, 0.95);
-                        border: 1px solid var(--border);
-                        border-right: none;
-                        border-top-left-radius: 8px;
-                        border-bottom-left-radius: 8px;
-                        display: flex;
-                        flex-direction: column;
-                        align-items: center;
-                        justify-content: center;
-                        cursor: pointer;
-                        transition: all 0.3s ease;
-                        box-shadow: -2px 0 8px rgba(0,0,0,0.2);
-                        user-select: none;
-                        -webkit-user-select: none;
-                        -moz-user-select: none;
-                        -ms-user-select: none;
-                    ">
-                        <div style="
-                            font-size: 18px;
-                            margin-bottom: 4px;
-                            white-space: nowrap;
-                            color: var(--color-text-dark-mode);
-                        ">🛒</div>
-                        <div id="cart-tab-badge" style="
-                            background: #f44336;
-                            color: white;
-                            border-radius: 10px;
-                            min-width: 18px;
-                            height: 18px;
-                            font-size: 10px;
-                            display: none;
-                            align-items: center;
-                            justify-content: center;
-                            font-weight: bold;
-                        ">0</div>
-                    </div>
+            <!-- 购物车标签/触发器 -->
+            <div id="cart-tab" style="
+                position: absolute;
+                left: -40px;
+                top: ${this.cartTabPosition.y};
+                transform: translateY(-50%);
+                width: 40px;
+                height: 80px;
+                background: rgba(42, 43, 66, 0.95);
+                border: 1px solid var(--border);
+                border-right: none;
+                border-top-left-radius: 8px;
+                border-bottom-left-radius: 8px;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                cursor: pointer;
+                transition: all 0.3s ease;
+                box-shadow: -2px 0 8px rgba(0,0,0,0.2);
+                user-select: none;
+                -webkit-user-select: none;
+                -moz-user-select: none;
+                -ms-user-select: none;
+            ">
+                <div style="
+                    font-size: 18px;
+                    margin-bottom: 4px;
+                    white-space: nowrap;
+                    color: var(--color-text-dark-mode);
+                ">🛒</div>
+                <div id="cart-tab-badge" style="
+                    background: #f44336;
+                    color: white;
+                    border-radius: 10px;
+                    min-width: 18px;
+                    height: 18px;
+                    font-size: 10px;
+                    display: none;
+                    align-items: center;
+                    justify-content: center;
+                    font-weight: bold;
+                ">0</div>
+            </div>
 
-                    <!-- 购物车头部 -->
-                    <div style="
-                        display: flex;
-                        justify-content: space-between;
-                        align-items: center;
-                        padding: 12px 16px;
-                        border-bottom: 1px solid var(--border-separator);
-                        background: var(--card-title-background);
-                        border-top-left-radius: 8px;
-                        flex-shrink: 0;
-                    ">
-                        <h3 style="
-                            margin: 0;
-                            color: var(--card-title-text);
-                            font-size: 16px;
-                            font-weight: bold;
-                        ">${LANG.shoppingCart}</h3>
-                        <div style="
-                            background: rgba(156, 39, 176, 0.2);
-                            color: var(--color-text-dark-mode);
-                            padding: 2px 8px;
-                            border-radius: 12px;
-                            font-size: 11px;
-                            font-weight: 500;
-                        " id="cart-count-display">0 ${LANG.cartItem}</div>
-                    </div>
+            <!-- 购物车头部 -->
+            <div style="
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                padding: 12px 16px;
+                border-bottom: 1px solid var(--border-separator);
+                background: var(--card-title-background);
+                border-top-left-radius: 8px;
+                flex-shrink: 0;
+            ">
+                <h3 style="
+                    margin: 0;
+                    color: var(--card-title-text);
+                    font-size: 16px;
+                    font-weight: bold;
+                ">${LANG.shoppingCart}</h3>
+                <div style="
+                    background: rgba(156, 39, 176, 0.2);
+                    color: var(--color-text-dark-mode);
+                    padding: 2px 8px;
+                    border-radius: 12px;
+                    font-size: 11px;
+                    font-weight: 500;
+                " id="cart-count-display">0 ${LANG.cartItem}</div>
+            </div>
 
-                    <!-- 保存清单区域 -->
-                    <div style="
-                        padding: 12px 16px;
-                        border-bottom: 1px solid var(--border-separator);
-                        background: var(--card-background);
-                        flex-shrink: 0;
-                    ">
-                        <div style="display: flex; gap: 8px; align-items: center;">
-                            <input id="list-name-input" type="text" placeholder="${LANG.listName}" maxlength="20" style="
-                                flex: 1;
-                                padding: 6px 8px;
-                                background-color: var(--item-background);
-                                border: 1px solid var(--item-border);
-                                border-radius: 4px;
-                                color: var(--color-text-dark-mode);
-                                font-size: 12px;
-                                outline: none;
-                            ">
-                            <button id="save-list-btn" style="
-                                padding: 6px 12px;
-                                background-color: rgba(33, 150, 243, 0.8);
-                                color: white;
-                                border: none;
-                                border-radius: 4px;
-                                cursor: pointer;
-                                font-size: 12px;
-                                font-weight: 500;
-                                transition: background-color 0.2s;
-                                white-space: nowrap;
-                            ">${LANG.save}</button>
-                        </div>
-                    </div>
-
-                    <!-- 导入导出区域 -->
-                    <div style="
-                        padding: 8px 16px;
-                        border-bottom: 1px solid var(--border-separator);
-                        background: var(--card-background);
-                        flex-shrink: 0;
-                    ">
-                        <div style="display: flex; gap: 8px; align-items: center;">
-                            <button id="export-lists-btn" style="
-                                flex: 1;
-                                padding: 6px 12px;
-                                background-color: rgba(76, 175, 80, 0.8);
-                                color: white;
-                                border: none;
-                                border-radius: 4px;
-                                cursor: pointer;
-                                font-size: 12px;
-                                font-weight: 500;
-                                transition: background-color 0.2s;
-                                white-space: nowrap;
-                            ">${LANG.exportSavedLists}</button>
-                            <button id="import-lists-btn" style="
-                                flex: 1;
-                                padding: 6px 12px;
-                                background-color: rgba(33, 150, 243, 0.8);
-                                color: white;
-                                border: none;
-                                border-radius: 4px;
-                                cursor: pointer;
-                                font-size: 12px;
-                                font-weight: 500;
-                                transition: background-color 0.2s;
-                                white-space: nowrap;
-                            ">${LANG.importSavedLists}</button>
-                        </div>
-                    </div>
-
-                    <!-- 其他购物车内容 -->
-                    <div id="cart-items-container" style="
+            <!-- 全局控制区域 -->
+            <div style="
+                padding: 12px 16px;
+                border-bottom: 1px solid var(--border-separator);
+                background: var(--card-background);
+                flex-shrink: 0;
+            ">
+                <!-- 全选控制 -->
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                    <label style="display: flex; align-items: center; cursor: pointer; color: var(--color-text-dark-mode); font-size: 13px;">
+                        <input type="checkbox" id="select-all-checkbox" checked style="margin-right: 8px; transform: scale(1.1);">
+                        ${LANG.selectAll}
+                    </label>
+                </div>
+                
+                <!-- 批量购买方式设置 -->
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <span style="color: var(--color-text-dark-mode); font-size: 12px; font-weight: 500;">${LANG.batchSettings}</span>
+                    <button id="batch-set-ask" style="
                         flex: 1;
-                        overflow-y: auto;
-                        padding: 8px;
-                        background: var(--card-background);
-                        min-height: 0;
-                    "></div>
+                        padding: 6px 12px;
+                        background-color: rgba(217, 89, 97, 0.8);
+                        color: white;
+                        border: none;
+                        border-radius: 4px;
+                        cursor: pointer;
+                        font-size: 12px;
+                        font-weight: 500;
+                        transition: background-color 0.2s;
+                        white-space: nowrap;
+                    ">${LANG.directBuy}</button>
+                    <button id="batch-set-bid" style="
+                        flex: 1;
+                        padding: 6px 12px;
+                        background-color: rgba(47, 196, 167, 0.8);
+                        color: white;
+                        border: none;
+                        border-radius: 4px;
+                        cursor: pointer;
+                        font-size: 12px;
+                        font-weight: 500;
+                        transition: background-color 0.2s;
+                        white-space: nowrap;
+                    ">${LANG.bidOrder}</button>
+                </div>
+            </div>
 
-                    <!-- 已保存清单 -->
-                    <div style="
-                        border-top: 1px solid var(--border-separator);
-                        background: var(--card-background);
-                        flex-shrink: 0;
-                        max-height: 200px;
-                        display: flex;
-                        flex-direction: column;
+            <!-- 保存清单区域 -->
+            <div style="
+                padding: 12px 16px;
+                border-bottom: 1px solid var(--border-separator);
+                background: var(--card-background);
+                flex-shrink: 0;
+            ">
+                <div style="display: flex; gap: 8px; align-items: center;">
+                    <input id="list-name-input" type="text" placeholder="${LANG.listName}" maxlength="20" style="
+                        flex: 1;
+                        padding: 6px 8px;
+                        background-color: var(--item-background);
+                        border: 1px solid var(--item-border);
+                        border-radius: 4px;
+                        color: var(--color-text-dark-mode);
+                        font-size: 12px;
+                        outline: none;
                     ">
-                        <div style="
-                            padding: 8px 16px;
-                            font-size: 12px;
-                            font-weight: 500;
-                            color: var(--color-neutral-400);
-                            border-bottom: 1px solid var(--border-separator);
-                        ">${LANG.savedLists}</div>
-                        <div id="saved-lists-container" style="
-                            flex: 1;
-                            overflow-y: auto;
-                            padding: 8px;
-                            min-height: 0;
-                        "></div>
-                    </div>
+                    <button id="save-list-btn" style="
+                        padding: 6px 12px;
+                        background-color: rgba(33, 150, 243, 0.8);
+                        color: white;
+                        border: none;
+                        border-radius: 4px;
+                        cursor: pointer;
+                        font-size: 12px;
+                        font-weight: 500;
+                        transition: background-color 0.2s;
+                        white-space: nowrap;
+                    ">${LANG.save}</button>
+                </div>
+            </div>
 
-                    <!-- 购物车操作按钮 -->
-                    <div id="cart-actions" style="
-                        padding: 12px 16px;
-                        border-top: 1px solid var(--border-separator);
-                        background: var(--card-background);
-                        border-bottom-left-radius: 8px;
-                        display: flex;
-                        flex-direction: column;
-                        gap: 8px;
-                        flex-shrink: 0;
-                    ">
-                        <div style="display: flex; gap: 8px;">
-                            <button id="cart-buy-btn" style="
-                                flex: 1;
-                                padding: 8px 12px;
-                                background-color: var(--color-market-buy);
-                                color: #000;
-                                border: none;
-                                border-radius: 4px;
-                                cursor: pointer;
-                                font-weight: bold;
-                                transition: background-color 0.2s;
-                                font-size: 13px;
-                            ">${LANG.cartDirectBuy}</button>
-                            <button id="cart-bid-btn" style="
-                                flex: 1;
-                                padding: 8px 12px;
-                                background-color: var(--color-market-sell);
-                                color: #000;
-                                border: none;
-                                border-radius: 4px;
-                                cursor: pointer;
-                                font-weight: bold;
-                                transition: background-color 0.2s;
-                                font-size: 13px;
-                            ">${LANG.cartBidOrder}</button>
-                        </div>
-                        <button id="cart-clear-btn" style="
-                            padding: 6px 12px;
-                            background-color: transparent;
-                            color: var(--color-neutral-400);
-                            border: 1px solid var(--border-separator);
-                            border-radius: 4px;
-                            cursor: pointer;
-                            font-size: 12px;
-                            transition: all 0.2s;
-                        ">${LANG.cartClear}</button>
-                    </div>
-                `;
+            <!-- 导入导出区域 -->
+            <div style="
+                padding: 8px 16px;
+                border-bottom: 1px solid var(--border-separator);
+                background: var(--card-background);
+                flex-shrink: 0;
+            ">
+                <div style="display: flex; gap: 8px; align-items: center;">
+                    <button id="export-lists-btn" style="
+                        flex: 1;
+                        padding: 6px 12px;
+                        background-color: rgba(76, 175, 80, 0.8);
+                        color: white;
+                        border: none;
+                        border-radius: 4px;
+                        cursor: pointer;
+                        font-size: 12px;
+                        font-weight: 500;
+                        transition: background-color 0.2s;
+                        white-space: nowrap;
+                    ">${LANG.exportSavedLists}</button>
+                    <button id="import-lists-btn" style="
+                        flex: 1;
+                        padding: 6px 12px;
+                        background-color: rgba(33, 150, 243, 0.8);
+                        color: white;
+                        border: none;
+                        border-radius: 4px;
+                        cursor: pointer;
+                        font-size: 12px;
+                        font-weight: 500;
+                        transition: background-color 0.2s;
+                        white-space: nowrap;
+                    ">${LANG.importSavedLists}</button>
+                </div>
+            </div>
+
+            <!-- 购物车内容 -->
+            <div id="cart-items-container" style="
+                flex: 1;
+                overflow-y: auto;
+                padding: 8px;
+                background: var(--card-background);
+                min-height: 0;
+            "></div>
+
+            <!-- 已保存清单 -->
+            <div style="
+                border-top: 1px solid var(--border-separator);
+                background: var(--card-background);
+                flex-shrink: 0;
+                max-height: 200px;
+                display: flex;
+                flex-direction: column;
+            ">
+                <div style="
+                    padding: 8px 16px;
+                    font-size: 12px;
+                    font-weight: 500;
+                    color: var(--color-neutral-400);
+                    border-bottom: 1px solid var(--border-separator);
+                ">${LANG.savedLists}</div>
+                <div id="saved-lists-container" style="
+                    flex: 1;
+                    overflow-y: auto;
+                    padding: 8px;
+                    min-height: 0;
+                "></div>
+            </div>
+
+            <!-- 购物车操作按钮 -->
+            <div id="cart-actions" style="
+                padding: 12px 16px;
+                border-top: 1px solid var(--border-separator);
+                background: var(--card-background);
+                border-bottom-left-radius: 8px;
+                display: flex;
+                flex-direction: column;
+                gap: 8px;
+                flex-shrink: 0;
+            ">
+                <button id="cart-purchase-btn" style="
+                    padding: 10px 12px;
+                    background-color: rgba(30, 58, 138, 0.85);
+                    color: white;
+                    border: none;
+                    border-radius: 4px;
+                    cursor: pointer;
+                    font-weight: bold;
+                    transition: background-color 0.2s;
+                    font-size: 14px;
+                    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+                ">${LANG.purchaseAll}</button>
+                <button id="cart-clear-btn" style="
+                    padding: 6px 12px;
+                    background-color: transparent;
+                    color: var(--color-neutral-400);
+                    border: 1px solid var(--border-separator);
+                    border-radius: 4px;
+                    cursor: pointer;
+                    font-size: 12px;
+                    transition: all 0.2s;
+                ">${LANG.cartClear}</button>
+            </div>
+        `;
 
             document.body.appendChild(this.cartContainer);
             this.bindEvents();
@@ -6269,6 +6304,107 @@
                     listNameInput.value = this.currentListName;
                 }
             }, 0);
+        }
+
+        // 在 ShoppingCartManager 类中，修改 createPurchaseModeToggle 方法
+
+        createPurchaseModeToggle(mode = 'bid') {
+            const toggle = document.createElement('div');
+            toggle.className = 'purchase-mode-toggle';
+            toggle.setAttribute('data-mode', mode);
+
+            const isAsk = mode === 'ask';
+            const borderColor = isAsk ? 'rgba(217, 89, 97, 1)' : 'rgba(47, 196, 167, 1)';
+            const sliderBg = isAsk ? 'rgba(217, 89, 97, 1)' : 'rgba(47, 196, 167, 1)';
+            const sliderText = isAsk ? `${LANG.directBuyMode}` : `${LANG.bidOrderMode}`;
+            const sliderPosition = isAsk ? 'left: 2px' : 'right: 2px';
+            const toggleBackgroundColor = 'var(--item-background)';
+
+            toggle.style.cssText = `
+                position: relative;
+                width: 70px;
+                height: 24px;
+                background: ${toggleBackgroundColor};
+                border-radius: 12px;
+                cursor: pointer;
+                transition: all 0.3s ease;
+                border: 2px solid ${borderColor};
+                flex-shrink: 0;
+            `;
+
+            toggle.innerHTML = `
+                <div class="toggle-slider" style="
+                    position: absolute;
+                    top: 1px;
+                    ${sliderPosition};
+                    width: 32px;
+                    height: 18px;
+                    background: ${sliderBg};
+                    border-radius: 9px;
+                    transition: all 0.3s ease;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    color: white;
+                    font-size: 9px;
+                    font-weight: bold;
+                ">${sliderText}</div>
+                <div style="
+                    position: absolute;
+                    top: 1px;
+                    left: 2px;
+                    width: 32px;
+                    height: 18px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    color: ${isAsk ? 'var(--color-text-dark-mode)' : 'var(--color-neutral-400)'};
+                    font-size: 9px;
+                    font-weight: bold;
+                ">${LANG.directBuyMode}</div>
+                <div style="
+                    position: absolute;
+                    top: 1px;
+                    right: 2px;
+                    width: 32px;
+                    height: 18px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    color: ${isAsk ? 'var(--color-neutral-400)' : 'var(--color-text-dark-mode)'};
+                    font-size: 9px;
+                    font-weight: bold;
+                ">${LANG.bidOrderMode}</div>
+            `;
+
+            return toggle;
+        }
+
+        togglePurchaseMode(toggle) {
+            const currentMode = toggle.getAttribute('data-mode');
+            const newMode = currentMode === 'ask' ? 'bid' : 'ask';
+
+            toggle.setAttribute('data-mode', newMode);
+
+            const slider = toggle.querySelector('.toggle-slider');
+            const isAsk = newMode === 'ask';
+            const borderColor = isAsk ? 'rgba(217, 89, 97, 1)' : 'rgba(47, 196, 167, 1)';
+            const sliderBg = isAsk ? 'rgba(217, 89, 97, 1)' : 'rgba(47, 196, 167, 1)';
+            const sliderText = isAsk ? `${LANG.directBuyMode}` : `${LANG.bidOrderMode}`;
+
+            // 更新切换器样式
+            toggle.style.borderColor = borderColor;
+            slider.style.backgroundColor = sliderBg;
+            slider.style.left = isAsk ? '2px' : 'auto';
+            slider.style.right = isAsk ? 'auto' : '2px';
+            slider.textContent = sliderText;
+
+            // 更新标签颜色
+            const labels = toggle.querySelectorAll('div:not(.toggle-slider)');
+            labels[0].style.color = isAsk ? 'var(--color-text-dark-mode)' : 'var(--color-neutral-400)'; // 直购
+            labels[1].style.color = isAsk ? 'var(--color-neutral-400)' : 'var(--color-text-dark-mode)'; // 求购
+
+            return newMode;
         }
 
         //设置市场购物车按钮
@@ -6457,15 +6593,37 @@
 
         bindEvents() {
             const cartTab = document.getElementById('cart-tab');
-            const buyBtn = document.getElementById('cart-buy-btn');
-            const bidBtn = document.getElementById('cart-bid-btn');
+            const purchaseBtn = document.getElementById('cart-purchase-btn');
             const clearBtn = document.getElementById('cart-clear-btn');
             const saveListBtn = document.getElementById('save-list-btn');
             const listNameInput = document.getElementById('list-name-input');
             const exportBtn = document.getElementById('export-lists-btn');
             const importBtn = document.getElementById('import-lists-btn');
+            const selectAllCheckbox = document.getElementById('select-all-checkbox');
+            const batchSetAskBtn = document.getElementById('batch-set-ask');
+            const batchSetBidBtn = document.getElementById('batch-set-bid');
 
             this.setupCartTabDragAndClick();
+
+            // 全选/反选
+            selectAllCheckbox.addEventListener('change', () => {
+                this.allSelected = selectAllCheckbox.checked;
+                this.items.forEach(item => {
+                    item.selected = this.allSelected;
+                });
+                this.updateCartDisplay();
+                this.saveCartToStorage();
+            });
+
+            // 批量设置直购
+            batchSetAskBtn.addEventListener('click', () => {
+                this.batchSetPurchaseMode('ask');
+            });
+
+            // 批量设置求购
+            batchSetBidBtn.addEventListener('click', () => {
+                this.batchSetPurchaseMode('bid');
+            });
 
             listNameInput.addEventListener('input', (e) => {
                 const inputValue = e.target.value.trim();
@@ -6475,8 +6633,7 @@
                 }
             });
 
-            buyBtn.addEventListener('click', () => this.batchPurchase(false));
-            bidBtn.addEventListener('click', () => this.batchPurchase(true));
+            purchaseBtn.addEventListener('click', () => this.executeSelectedPurchases());
             clearBtn.addEventListener('click', () => this.clearCart());
 
             saveListBtn.addEventListener('click', () => {
@@ -6498,17 +6655,15 @@
             exportBtn.addEventListener('click', () => this.exportShoppingLists());
             importBtn.addEventListener('click', () => this.importShoppingLists());
 
+            // 悬停效果
             exportBtn.addEventListener('mouseenter', () => exportBtn.style.backgroundColor = 'rgba(76, 175, 80, 0.9)');
             exportBtn.addEventListener('mouseleave', () => exportBtn.style.backgroundColor = 'rgba(76, 175, 80, 0.8)');
 
             importBtn.addEventListener('mouseenter', () => importBtn.style.backgroundColor = 'rgba(33, 150, 243, 0.9)');
             importBtn.addEventListener('mouseleave', () => importBtn.style.backgroundColor = 'rgba(33, 150, 243, 0.8)');
 
-            buyBtn.addEventListener('mouseenter', () => buyBtn.style.backgroundColor = 'var(--color-market-buy-hover)');
-            buyBtn.addEventListener('mouseleave', () => buyBtn.style.backgroundColor = 'var(--color-market-buy)');
-
-            bidBtn.addEventListener('mouseenter', () => bidBtn.style.backgroundColor = 'var(--color-market-sell-hover)');
-            bidBtn.addEventListener('mouseleave', () => bidBtn.style.backgroundColor = 'var(--color-market-sell)');
+            purchaseBtn.addEventListener('mouseenter', () => purchaseBtn.style.backgroundColor = 'rgba(30, 58, 138, 0.95)');
+            purchaseBtn.addEventListener('mouseleave', () => purchaseBtn.style.backgroundColor = 'rgba(30, 58, 138, 0.85)');
 
             clearBtn.addEventListener('mouseenter', () => {
                 clearBtn.style.backgroundColor = 'rgba(244, 67, 54, 0.1)';
@@ -6524,9 +6679,16 @@
             saveListBtn.addEventListener('mouseenter', () => saveListBtn.style.backgroundColor = 'rgba(33, 150, 243, 0.9)');
             saveListBtn.addEventListener('mouseleave', () => saveListBtn.style.backgroundColor = 'rgba(33, 150, 243, 0.8)');
 
+            batchSetAskBtn.addEventListener('mouseenter', () => batchSetAskBtn.style.backgroundColor = 'rgba(217, 89, 97, 0.9)');
+            batchSetAskBtn.addEventListener('mouseleave', () => batchSetAskBtn.style.backgroundColor = 'rgba(217, 89, 97, 0.8)');
+
+            batchSetBidBtn.addEventListener('mouseenter', () => batchSetBidBtn.style.backgroundColor = 'rgba(47, 196, 167, 0.9)');
+            batchSetBidBtn.addEventListener('mouseleave', () => batchSetBidBtn.style.backgroundColor = 'rgba(47, 196, 167, 0.8)');
+
             listNameInput.addEventListener('focus', () => listNameInput.style.borderColor = 'var(--color-primary)');
             listNameInput.addEventListener('blur', () => listNameInput.style.borderColor = 'var(--item-border)');
 
+            // 购物车事件委托
             this.cartContainer.addEventListener('click', (e) => {
                 const removeBtn = e.target.closest('[data-remove-item]');
                 if (removeBtn) {
@@ -6558,22 +6720,23 @@
                     this.deleteSavedList(listName);
                     return;
                 }
-            });
 
-            this.cartContainer.addEventListener('dblclick', (e) => {
-                const listItem = e.target.closest('#saved-lists-container > div');
-                if (listItem) {
+                // 购买方式切换器
+                const toggle = e.target.closest('.purchase-mode-toggle[data-item-id]');
+                if (toggle) {
                     e.stopPropagation();
-                    e.preventDefault();
-
-                    const loadBtn = listItem.querySelector('[data-load-list]');
-                    if (loadBtn) {
-                        const listName = loadBtn.dataset.loadList;
-                        this.loadSavedList(listName);
+                    const itemId = toggle.dataset.itemId;
+                    const newMode = this.togglePurchaseMode(toggle);
+                    const item = this.items.get(itemId);
+                    if (item) {
+                        item.purchaseMode = newMode;
+                        this.saveCartToStorage();
                     }
+                    return;
                 }
             });
 
+            // 数量输入变化事件
             this.cartContainer.addEventListener('input', (e) => {
                 if (e.target.matches('input[data-item-id]')) {
                     const itemId = e.target.dataset.itemId;
@@ -6585,13 +6748,40 @@
             });
 
             this.cartContainer.addEventListener('change', (e) => {
-                if (e.target.matches('input[data-item-id]')) {
+                // 数量变化
+                if (e.target.matches('input[data-item-id][type="number"]')) {
                     const itemId = e.target.dataset.itemId;
                     let quantity = parseInt(e.target.value) || 1;
                     if (quantity < 1) quantity = 1;
                     if (quantity > 999999999999) quantity = 999999999999;
                     e.target.value = quantity;
                     this.updateItemQuantity(itemId, quantity);
+                }
+
+                // 选择状态变化
+                if (e.target.matches('input[data-item-id][type="checkbox"]')) {
+                    const itemId = e.target.dataset.itemId;
+                    const item = this.items.get(itemId);
+                    if (item) {
+                        item.selected = e.target.checked;
+                        this.updateSelectAllState();
+                        this.saveCartToStorage();
+                    }
+                }
+            });
+
+            // 双击加载清单
+            this.cartContainer.addEventListener('dblclick', (e) => {
+                const listItem = e.target.closest('#saved-lists-container > div');
+                if (listItem) {
+                    e.stopPropagation();
+                    e.preventDefault();
+
+                    const loadBtn = listItem.querySelector('[data-load-list]');
+                    if (loadBtn) {
+                        const listName = loadBtn.dataset.loadList;
+                        this.loadSavedList(listName);
+                    }
                 }
             });
 
@@ -6611,15 +6801,51 @@
             }, true);
         }
 
-        showToast(message, type, duration) {
-            if (window.MWIModules?.toast) {
-                window.MWIModules.toast.show(message, type, duration);
+        // 批量设置购买方式
+        batchSetPurchaseMode(mode) {
+            let changedCount = 0;
+
+            // 为所有物品设置购买方式
+            this.items.forEach(item => {
+                if (item.purchaseMode !== mode) {
+                    item.purchaseMode = mode;
+                    changedCount++;
+                }
+            });
+
+            // 更新默认购买方式
+            this.defaultPurchaseMode = mode;
+
+            if (changedCount > 0) {
+                this.updateCartDisplay();
+                this.saveCartToStorage();
             }
         }
 
-        async batchPurchase(isBidOrder = false) {
-            if (this.items.size === 0) {
-                this.showToast(LANG.cartEmpty, 'warning');
+        // 更新全选状态
+        updateSelectAllState() {
+            const allSelected = Array.from(this.items.values()).every(item => item.selected);
+            const selectAllCheckbox = document.getElementById('select-all-checkbox');
+            if (selectAllCheckbox) {
+                selectAllCheckbox.checked = allSelected;
+            }
+            this.allSelected = allSelected;
+        }
+
+        // 执行选中物品的购买
+        async executeSelectedPurchases() {
+            const selectedItems = Array.from(this.items.entries())
+                .filter(([_, item]) => item.selected)
+                .map(([itemId, item]) => ({
+                    itemHrid: itemId.startsWith('/items/') ? itemId : `/items/${itemId}`,
+                    quantity: item.quantity,
+                    materialName: item.name,
+                    cartItemId: itemId,
+                    purchaseMode: item.purchaseMode || 'bid'
+                }));
+
+            if (selectedItems.length === 0) {
+                this.showToast('请选择要购买的物品', 'warning');
                 return;
             }
 
@@ -6629,52 +6855,43 @@
                 return;
             }
 
-            const buyBtn = document.getElementById('cart-buy-btn');
-            const bidBtn = document.getElementById('cart-bid-btn');
+            const purchaseBtn = document.getElementById('cart-purchase-btn');
             const clearBtn = document.getElementById('cart-clear-btn');
 
-            const originalBuyText = buyBtn.textContent;
-            const originalBidText = bidBtn.textContent;
-            const originalBuyBg = buyBtn.style.backgroundColor;
-            const originalBidBg = bidBtn.style.backgroundColor;
+            const originalText = purchaseBtn.textContent;
+            const originalBg = purchaseBtn.style.backgroundColor;
 
-            // 禁用所有按钮
-            buyBtn.disabled = true;
-            bidBtn.disabled = true;
+            // 禁用按钮
+            purchaseBtn.disabled = true;
             clearBtn.disabled = true;
-
-            if (isBidOrder) {
-                bidBtn.textContent = LANG.submitting;
-                bidBtn.style.backgroundColor = CONFIG.COLORS.disabled;
-                bidBtn.style.cursor = 'not-allowed';
-            } else {
-                buyBtn.textContent = LANG.buying;
-                buyBtn.style.backgroundColor = CONFIG.COLORS.disabled;
-                buyBtn.style.cursor = 'not-allowed';
-            }
-
-            const otherBtn = isBidOrder ? buyBtn : bidBtn;
-            otherBtn.style.backgroundColor = CONFIG.COLORS.disabled;
-            otherBtn.style.cursor = 'not-allowed';
-
+            purchaseBtn.textContent = '🔄 购买中...';
+            purchaseBtn.style.backgroundColor = CONFIG.COLORS.disabled;
+            purchaseBtn.style.cursor = 'not-allowed';
             clearBtn.style.backgroundColor = CONFIG.COLORS.disabled;
             clearBtn.style.cursor = 'not-allowed';
             clearBtn.style.opacity = '0.5';
 
-            const items = Array.from(this.items.entries()).map(([itemId, item]) => ({
-                itemHrid: itemId.startsWith('/items/') ? itemId : `/items/${itemId}`,
-                quantity: item.quantity,
-                materialName: item.name,
-                cartItemId: itemId
-            }));
-
             try {
-                const results = isBidOrder ?
-                    await api.batchBidOrder(items, CONFIG.DELAYS.PURCHASE) :
-                    await api.batchDirectPurchase(items, CONFIG.DELAYS.PURCHASE);
+                // 按购买方式分组
+                const askItems = selectedItems.filter(item => item.purchaseMode === 'ask');
+                const bidItems = selectedItems.filter(item => item.purchaseMode === 'bid');
 
-                // 处理购买结果
-                this.processCartResults(results, isBidOrder);
+                const results = [];
+
+                // 执行直购
+                if (askItems.length > 0) {
+                    const askResults = await api.batchDirectPurchase(askItems, CONFIG.DELAYS.PURCHASE);
+                    results.push(...askResults);
+                }
+
+                // 执行求购
+                if (bidItems.length > 0) {
+                    const bidResults = await api.batchBidOrder(bidItems, CONFIG.DELAYS.PURCHASE);
+                    results.push(...bidResults);
+                }
+
+                // 处理结果
+                this.processCartResults(results);
 
                 // 移除购买成功的物品
                 let successfulRemovals = 0;
@@ -6690,6 +6907,7 @@
                     this.saveCartToStorage();
                     this.updateCartBadge();
                     this.updateCartDisplay();
+                    this.updateSelectAllState();
 
                     // 如果购物车空了就关闭
                     if (this.items.size === 0) {
@@ -6701,17 +6919,11 @@
                 this.showToast(`${LANG.error}: ${error.message}`, 'error');
             } finally {
                 // 恢复按钮状态
-                buyBtn.disabled = false;
-                bidBtn.disabled = false;
+                purchaseBtn.disabled = false;
                 clearBtn.disabled = false;
-
-                buyBtn.textContent = originalBuyText;
-                bidBtn.textContent = originalBidText;
-                buyBtn.style.backgroundColor = originalBuyBg;
-                bidBtn.style.backgroundColor = originalBidBg;
-                buyBtn.style.cursor = 'pointer';
-                bidBtn.style.cursor = 'pointer';
-
+                purchaseBtn.textContent = originalText;
+                purchaseBtn.style.backgroundColor = originalBg;
+                purchaseBtn.style.cursor = 'pointer';
                 clearBtn.style.backgroundColor = 'transparent';
                 clearBtn.style.cursor = 'pointer';
                 clearBtn.style.opacity = '1';
@@ -6719,10 +6931,11 @@
         }
 
         // 处理购物车购买结果的方法
-        processCartResults(results, isBidOrder) {
+        processCartResults(results) {
             let successCount = 0;
 
             results.forEach(result => {
+                const isBidOrder = result.item.purchaseMode === 'bid';
                 const statusText = isBidOrder ?
                     (result.success ? LANG.submitted : LANG.failed) :
                     (result.success ? LANG.purchased : LANG.failed);
@@ -6818,7 +7031,9 @@
                 listData.items[itemId] = {
                     name: itemData.name,
                     iconHref: itemData.iconHref,
-                    quantity: itemData.quantity
+                    quantity: itemData.quantity,
+                    selected: itemData.selected !== false, // 默认选中
+                    purchaseMode: itemData.purchaseMode || 'bid' // 默认求购
                 };
             }
 
@@ -6842,7 +7057,9 @@
                 this.items.set(itemId, {
                     name: itemData.name,
                     iconHref: itemData.iconHref,
-                    quantity: itemData.quantity
+                    quantity: itemData.quantity,
+                    selected: itemData.selected !== false, // 兼容旧数据，默认选中
+                    purchaseMode: itemData.purchaseMode || 'bid' // 兼容旧数据，默认求购
                 });
             }
 
@@ -6856,6 +7073,7 @@
             this.saveCartToStorage();
             this.updateCartBadge();
             this.updateCartDisplay();
+            this.updateSelectAllState();
 
             this.showToast(`"${listName}"${LANG.loaded}`, 'success');
             return true;
@@ -6872,7 +7090,7 @@
 
                 const exportData = {
                     timestamp: new Date().toLocaleString('sv-SE').replace(/[-:T ]/g, '').slice(0, 14),
-                    version: '3.3.0',
+                    version: '3.6.4',
                     lists: listsData
                 };
 
@@ -6973,7 +7191,7 @@
 
         closeCart() {
             if (!this.isOpen) return;
-            this.cartContainer.style.transform = 'translateX(380px)';
+            this.cartContainer.style.transform = 'translateX(450px)';
             this.isOpen = false;
         }
 
@@ -7005,13 +7223,16 @@
                 this.items.set(itemInfo.id, {
                     name: itemInfo.name,
                     iconHref: itemInfo.iconHref,
-                    quantity: quantity
+                    quantity: quantity,
+                    selected: true, // 新添加的物品默认选中
+                    purchaseMode: this.defaultPurchaseMode // 使用默认购买方式
                 });
             }
 
             this.saveCartToStorage();
             this.updateCartBadge();
             this.updateCartDisplay();
+            this.updateSelectAllState();
 
             this.showToast(`${LANG.add} ${itemInfo.name} x${quantity} ${LANG.toCart}`, 'success', 2000);
         }
@@ -7021,6 +7242,7 @@
             this.saveCartToStorage();
             this.updateCartBadge();
             this.updateCartDisplay();
+            this.updateSelectAllState();
 
             if (this.items.size === 0) {
                 this.closeCart();
@@ -7052,6 +7274,13 @@
                 listNameInput.value = '';
             }
 
+            const selectAllCheckbox = document.getElementById('select-all-checkbox');
+            if (selectAllCheckbox) {
+                selectAllCheckbox.checked = true;
+            }
+
+            this.allSelected = true;
+
             this.saveCartToStorage();
             this.updateCartBadge();
             this.updateCartDisplay();
@@ -7069,93 +7298,116 @@
 
             if (this.items.size === 0) {
                 container.innerHTML = `
-                        <div style="
-                            text-align: center;
-                            color: var(--color-neutral-400);
-                            padding: 40px 20px;
-                            font-style: italic;
-                            font-size: 14px;
-                        ">${LANG.cartEmpty}</div>
-                    `;
+                <div style="
+                    text-align: center;
+                    color: var(--color-neutral-400);
+                    padding: 40px 20px;
+                    font-style: italic;
+                    font-size: 14px;
+                ">${LANG.cartEmpty}</div>
+            `;
                 return;
             }
 
             let html = '';
             for (const [itemId, item] of this.items) {
+                const toggle = this.createPurchaseModeToggle(item.purchaseMode || 'bid');
+                toggle.setAttribute('data-item-id', itemId);
+
+                const toggleHTML = toggle.outerHTML;
+
                 html += `
-                        <div style="
-                            display: flex;
-                            align-items: center;
-                            padding: 10px;
-                            margin-bottom: 8px;
-                            background-color: var(--item-background);
-                            border: 1px solid var(--item-border);
-                            border-radius: 6px;
-                            transition: all 0.2s ease;
-                        " onmouseenter="this.style.backgroundColor='var(--item-background-hover)'; this.style.borderColor='var(--item-border-hover)'" onmouseleave="this.style.backgroundColor='var(--item-background)'; this.style.borderColor='var(--item-border)'">
-                            <div data-item-icon="${itemId}" style="
-                                width: 32px;
-                                height: 32px;
-                                margin-right: 12px;
+                <div style="
+                    display: flex;
+                    align-items: center;
+                    padding: 10px;
+                    margin-bottom: 8px;
+                    background-color: var(--item-background);
+                    border: 1px solid var(--item-border);
+                    border-radius: 6px;
+                    transition: all 0.2s ease;
+                " onmouseenter="this.style.backgroundColor='var(--item-background-hover)'; this.style.borderColor='var(--item-border-hover)'" onmouseleave="this.style.backgroundColor='var(--item-background)'; this.style.borderColor='var(--item-border)'">
+                    
+                    <!-- 选择框 -->
+                    <input type="checkbox" data-item-id="${itemId}" ${item.selected !== false ? 'checked' : ''} style="
+                        margin-right: 8px;
+                        transform: scale(1.2);
+                        cursor: pointer;
+                    ">
+                    
+                    <!-- 物品图标 -->
+                    <div data-item-icon="${itemId}" style="
+                        width: 32px;
+                        height: 32px;
+                        margin-right: 12px;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        background: var(--item-background);
+                        border-radius: 4px;
+                        cursor: pointer;
+                    ">
+                        <svg width="100%" height="100%" style="max-width: 24px; max-height: 24px;">
+                            <use href="/static/media/items_sprite.6d12eb9d.svg${item.iconHref}"></use>
+                        </svg>
+                    </div>
+                    
+                    <!-- 物品信息 -->
+                    <div style="flex: 1; color: var(--color-text-dark-mode); min-width: 0;">
+                        <div style="font-size: 13px; font-weight: 500; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${item.name}</div>
+                    </div>
+                    
+                    <!-- 控制区域 -->
+                    <div style="display: flex; align-items: center; gap: 8px; flex-shrink: 0;">
+                        <!-- 购买方式切换器 -->
+                        ${toggleHTML}
+                        
+                        <!-- 数量输入 -->
+                        <input
+                            type="number"
+                            value="${item.quantity}"
+                            min="1"
+                            max="999999999999"
+                            maxlength="12"
+                            data-item-id="${itemId}"
+                            style="
+                                width: 120px;
+                                padding: 4px 6px;
+                                background-color: var(--item-background);
+                                border: 1px solid var(--item-border);
+                                border-radius: 3px;
+                                color: var(--color-text-dark-mode);
+                                font-size: 11px;
+                                text-align: right;
+                            "
+                        >
+                        
+                        <!-- 删除按钮 -->
+                        <button
+                            data-remove-item="${itemId}"
+                            style="
+                                background: none;
+                                border: none;
+                                color: #f44336;
+                                cursor: pointer;
+                                padding: 4px;
+                                border-radius: 3px;
+                                transition: background-color 0.2s;
+                                font-size: 12px;
+                                width: 24px;
+                                height: 24px;
                                 display: flex;
                                 align-items: center;
                                 justify-content: center;
-                                background: var(--item-background);
-                                border-radius: 4px;
-                                cursor: pointer;
-                            ">
-                                <svg width="100%" height="100%" style="max-width: 24px; max-height: 24px;">
-                                    <use href="/static/media/items_sprite.6d12eb9d.svg${item.iconHref}"></use>
-                                </svg>
-                            </div>
-                            <div style="flex: 1; color: var(--color-text-dark-mode); min-width: 0;">
-                                <div style="font-size: 13px; font-weight: 500; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${item.name}</div>
-                                <div style="font-size: 11px; color: var(--color-neutral-400);">${LANG.cartQuantity}: ${item.quantity}</div>
-                            </div>
-                            <div style="display: flex; align-items: center; gap: 8px; flex-shrink: 0;">
-                                <input
-                                    type="number"
-                                    value="${item.quantity}"
-                                    min="1"
-                                    max="999999999999"
-                                    maxlength="12"
-                                    data-item-id="${itemId}"
-                                    style="
-                                        width: 120px;
-                                        padding: 4px 8px;
-                                        background-color: var(--item-background);
-                                        border: 1px solid var(--item-border);
-                                        border-radius: 3px;
-                                        color: var(--color-text-dark-mode);
-                                        font-size: 12px;
-                                        text-align: right;
-                                    "
-                                >
-                                <button
-                                    data-remove-item="${itemId}"
-                                    style="
-                                        background: none;
-                                        border: none;
-                                        color: #f44336;
-                                        cursor: pointer;
-                                        padding: 4px;
-                                        border-radius: 3px;
-                                        transition: background-color 0.2s;
-                                        font-size: 12px;
-                                        width: 24px;
-                                        height: 24px;
-                                        display: flex;
-                                        align-items: center;
-                                        justify-content: center;
-                                        flex-shrink: 0;
-                                    "
-                                    title="${LANG.cartRemove}"
-                                    onmouseenter="this.style.backgroundColor='rgba(244, 67, 54, 0.2)'"
-                                    onmouseleave="this.style.backgroundColor='transparent'"
-                                >🗑️</button>
-                            </div>
-                        </div>
-                    `;
+                                flex-shrink: 0;
+                            "
+                            title="${LANG.cartRemove}"
+                            onmouseenter="this.style.backgroundColor='rgba(244, 67, 54, 0.2)'"
+                            onmouseleave="this.style.backgroundColor='transparent'"
+                        >🗑️</button>
+                    </div>
+                </div>
+            `;
             }
 
             container.innerHTML = html;
@@ -7167,14 +7419,14 @@
 
             if (this.savedLists.size === 0) {
                 container.innerHTML = `
-                        <div style="
-                            text-align: center;
-                            color: var(--color-neutral-400);
-                            padding: 20px;
-                            font-style: italic;
-                            font-size: 12px;
-                        ">${LANG.noSavedLists}</div>
-                    `;
+                <div style="
+                    text-align: center;
+                    color: var(--color-neutral-400);
+                    padding: 20px;
+                    font-style: italic;
+                    font-size: 12px;
+                ">${LANG.noSavedLists}</div>
+            `;
                 return;
             }
 
@@ -7186,66 +7438,66 @@
                 const itemCount = Object.keys(listData.items).length;
 
                 html += `
-                        <div style="
-                            display: flex;
-                            align-items: center;
-                            padding: 8px;
-                            margin-bottom: 6px;
-                            background-color: var(--item-background);
-                            border: 1px solid var(--item-border);
-                            border-radius: 4px;
-                            transition: all 0.2s ease;
-                            user-select: none;
-                            -webkit-user-select: none;
-                            -moz-user-select: none;
-                            -ms-user-select: none;
-                        " onmouseenter="this.style.backgroundColor='var(--item-background-hover)'" onmouseleave="this.style.backgroundColor='var(--item-background)'">
-                            <div style="flex: 1; color: var(--color-text-dark-mode); min-width: 0;">
-                                <div style="font-size: 12px; font-weight: 500; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${listName}</div>
-                                <div style="font-size: 10px; color: var(--color-neutral-400);">${itemCount}${LANG.cartItem}</div>
-                            </div>
-                            <div style="display: flex; gap: 6px; flex-shrink: 0;">
-                                <button
-                                    data-load-list="${listName}"
-                                    style="
-                                        background: rgba(76, 175, 80, 0.8);
-                                        color: white;
-                                        border: none;
-                                        border-radius: 4px;
-                                        cursor: pointer;
-                                        padding: 6px 10px;
-                                        font-size: 11px;
-                                        font-weight: 500;
-                                        transition: background-color 0.2s;
-                                        line-height: 1;
-                                        white-space: nowrap;
-                                    "
-                                    title="加载清单"
-                                    onmouseenter="this.style.backgroundColor='rgba(76, 175, 80, 0.9)'"
-                                    onmouseleave="this.style.backgroundColor='rgba(76, 175, 80, 0.8)'"
-                                >${LANG.load}</button>
-                                <button
-                                    data-delete-list="${listName}"
-                                    style="
-                                        background: rgba(244, 67, 54, 0.8);
-                                        color: white;
-                                        border: none;
-                                        border-radius: 4px;
-                                        cursor: pointer;
-                                        padding: 6px 10px;
-                                        font-size: 11px;
-                                        font-weight: 500;
-                                        transition: background-color 0.2s;
-                                        line-height: 1;
-                                        white-space: nowrap;
-                                    "
-                                    title="删除清单"
-                                    onmouseenter="this.style.backgroundColor='rgba(244, 67, 54, 0.9)'"
-                                    onmouseleave="this.style.backgroundColor='rgba(244, 67, 54, 0.8)'"
-                                >${LANG.delete}</button>
-                            </div>
-                        </div>
-                    `;
+                <div style="
+                    display: flex;
+                    align-items: center;
+                    padding: 8px;
+                    margin-bottom: 6px;
+                    background-color: var(--item-background);
+                    border: 1px solid var(--item-border);
+                    border-radius: 4px;
+                    transition: all 0.2s ease;
+                    user-select: none;
+                    -webkit-user-select: none;
+                    -moz-user-select: none;
+                    -ms-user-select: none;
+                " onmouseenter="this.style.backgroundColor='var(--item-background-hover)'" onmouseleave="this.style.backgroundColor='var(--item-background)'">
+                    <div style="flex: 1; color: var(--color-text-dark-mode); min-width: 0;">
+                        <div style="font-size: 12px; font-weight: 500; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${listName}</div>
+                        <div style="font-size: 10px; color: var(--color-neutral-400);">${itemCount}${LANG.cartItem}</div>
+                    </div>
+                    <div style="display: flex; gap: 6px; flex-shrink: 0;">
+                        <button
+                            data-load-list="${listName}"
+                            style="
+                                background: rgba(76, 175, 80, 0.8);
+                                color: white;
+                                border: none;
+                                border-radius: 4px;
+                                cursor: pointer;
+                                padding: 6px 10px;
+                                font-size: 11px;
+                                font-weight: 500;
+                                transition: background-color 0.2s;
+                                line-height: 1;
+                                white-space: nowrap;
+                            "
+                            title="加载清单"
+                            onmouseenter="this.style.backgroundColor='rgba(76, 175, 80, 0.9)'"
+                            onmouseleave="this.style.backgroundColor='rgba(76, 175, 80, 0.8)'"
+                        >${LANG.load}</button>
+                        <button
+                            data-delete-list="${listName}"
+                            style="
+                                background: rgba(244, 67, 54, 0.8);
+                                color: white;
+                                border: none;
+                                border-radius: 4px;
+                                cursor: pointer;
+                                padding: 6px 10px;
+                                font-size: 11px;
+                                font-weight: 500;
+                                transition: background-color 0.2s;
+                                line-height: 1;
+                                white-space: nowrap;
+                            "
+                            title="删除清单"
+                            onmouseenter="this.style.backgroundColor='rgba(244, 67, 54, 0.9)'"
+                            onmouseleave="this.style.backgroundColor='rgba(244, 67, 54, 0.8)'"
+                        >${LANG.delete}</button>
+                    </div>
+                </div>
+            `;
             }
 
             container.innerHTML = html;
@@ -7255,7 +7507,9 @@
             try {
                 const cartData = {
                     items: Object.fromEntries(this.items),
-                    currentListName: this.currentListName
+                    currentListName: this.currentListName,
+                    allSelected: this.allSelected,
+                    defaultPurchaseMode: this.defaultPurchaseMode
                 };
                 localStorage.setItem('milkyway-current-cart', JSON.stringify(cartData));
             } catch (error) {
@@ -7266,8 +7520,24 @@
         loadCartFromStorage() {
             try {
                 const cartData = JSON.parse(localStorage.getItem('milkyway-current-cart') || '{}');
-                this.items = new Map(Object.entries(cartData.items || {}));
+
+                // 加载物品数据，确保兼容旧格式
+                const itemsData = cartData.items || {};
+                this.items = new Map();
+
+                for (const [itemId, itemData] of Object.entries(itemsData)) {
+                    this.items.set(itemId, {
+                        name: itemData.name,
+                        iconHref: itemData.iconHref,
+                        quantity: itemData.quantity,
+                        selected: itemData.selected !== false, // 兼容旧数据，默认选中
+                        purchaseMode: itemData.purchaseMode || 'bid' // 兼容旧数据，默认求购
+                    });
+                }
+
                 this.currentListName = cartData.currentListName || '';
+                this.allSelected = cartData.allSelected !== false; // 默认全选
+                this.defaultPurchaseMode = cartData.defaultPurchaseMode || 'bid'; // 默认求购
 
                 const listNameInput = document.getElementById('list-name-input');
                 if (listNameInput) {
@@ -7277,6 +7547,8 @@
                 console.warn('加载当前购物车失败:', error);
                 this.items = new Map();
                 this.currentListName = '';
+                this.allSelected = true;
+                this.defaultPurchaseMode = 'bid';
             }
         }
 
@@ -7315,6 +7587,12 @@
                 return true;
             }
             return false;
+        }
+
+        showToast(message, type, duration) {
+            if (window.MWIModules?.toast) {
+                window.MWIModules.toast.show(message, type, duration);
+            }
         }
     }
 
@@ -7859,19 +8137,19 @@
         applyUnifiedButtonStyle(btn, buttonType) {
             const buttonConfigs = {
                 'direct-buy': {
-                    backgroundColor: 'rgba(47, 196, 167, 0.8)',
-                    borderColor: 'rgba(47, 196, 167, 0.5)',
-                    hoverColor: 'rgba(89, 208, 185, 0.9)'
-                },
-                'bid-order': {
                     backgroundColor: 'rgba(217, 89, 97, 0.8)',
                     borderColor: 'rgba(217, 89, 97, 0.5)',
-                    hoverColor: 'rgba(227, 130, 137, 0.9)'
+                    hoverColor: 'rgba(217, 89, 97, 0.9)'
+                },
+                'bid-order': {
+                    backgroundColor: 'rgba(47, 196, 167, 0.8)',
+                    borderColor: 'rgba(47, 196, 167, 0.5)',
+                    hoverColor: 'rgba(47, 196, 167, 0.9)'
                 },
                 'add-to-cart': {
-                    backgroundColor: 'rgba(156, 39, 176, 0.8)',
-                    borderColor: 'rgba(156, 39, 176, 0.5)',
-                    hoverColor: 'rgba(123, 31, 162, 0.9)'
+                    backgroundColor: 'rgba(103, 58, 183, 0.8)',
+                    borderColor: 'rgba(103, 58, 183, 0.5)',
+                    hoverColor: 'rgba(103, 58, 183, 0.9)'
                 }
             };
 
