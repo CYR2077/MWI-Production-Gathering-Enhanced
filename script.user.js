@@ -3,7 +3,7 @@
 // @name:zh-CN   [银河奶牛]生产采集增强
 // @name:en      MWI Production & Gathering Enhanced
 // @namespace    http://tampermonkey.net/
-// @version      3.6.4
+// @version      3.6.5
 // @description  计算生产、强化、房屋所需材料并一键购买；显示今日资产增量，统计30天总资产生成走势图；计算生产与炼金实时利润；按照目标材料数量进行采集；快速切换角色；自动收集市场订单；功能支持自定义开关。
 // @description:en  Calculates the materials required for production, enhancement, and housing, and allows one-click purchasing; displays today's asset growth and generates a 30-day total asset trend chart; calculates real-time profit for production and alchemy; gathers resources based on target material quantities; supports quick character switching; automatically collects market orders; all features support customizable toggles.
 // @author       XIxixi297
@@ -1553,7 +1553,7 @@
                 }
             ];
             this.versionInfo = {
-                current: "3.6.4", // 当前版本
+                current: "3.6.5", // 当前版本
                 latest: null,
                 updateTime: null,
                 changelog: null
@@ -6014,11 +6014,13 @@
             this.cartContainer = document.createElement('div');
             this.cartContainer.id = 'shopping-cart-drawer';
 
+            const cartWidth = Math.min(window.innerWidth, 450) + 'px';
+
             utils.applyStyles(this.cartContainer, {
                 position: 'fixed',
                 top: '80px',
                 right: '0',
-                width: '450px', // 增加宽度以容纳新功能
+                width: cartWidth, // 增加宽度以容纳新功能
                 height: '75vh',
                 backgroundColor: 'rgba(42, 43, 66, 0.95)',
                 border: '1px solid var(--border)',
@@ -6028,12 +6030,14 @@
                 backdropFilter: 'blur(10px)',
                 boxShadow: '-4px 0 20px rgba(0,0,0,0.3)',
                 zIndex: '9999',
-                transform: 'translateX(450px)',
+                transform: `translateX(${cartWidth})`,
                 transition: 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
                 display: 'flex',
                 flexDirection: 'column',
                 fontFamily: 'Roboto, Helvetica, Arial, sans-serif'
             });
+
+            this.cartWidth = cartWidth;
 
             this.cartContainer.innerHTML = `
             <!-- 购物车标签/触发器 -->
@@ -6297,6 +6301,7 @@
             document.body.appendChild(this.cartContainer);
             this.bindEvents();
             this.updateCartDisplay();
+            this.setupResizeListener();
 
             setTimeout(() => {
                 const listNameInput = document.getElementById('list-name-input');
@@ -6304,6 +6309,28 @@
                     listNameInput.value = this.currentListName;
                 }
             }, 0);
+        }
+
+        setupResizeListener() {
+            let resizeTimeout;
+            window.addEventListener('resize', () => {
+                clearTimeout(resizeTimeout);
+                resizeTimeout = setTimeout(() => {
+                    const isMobile = window.innerWidth <= 768;
+                    const newCartWidth = isMobile ? Math.min(window.innerWidth - 20, 380) : 450;
+
+                    if (newCartWidth !== this.cartWidth) {
+                        this.cartWidth = newCartWidth;
+                        const cartWidthPx = `${newCartWidth}px`;
+
+                        this.cartContainer.style.width = cartWidthPx;
+
+                        if (!this.isOpen) {
+                            this.cartContainer.style.transform = `translateX(${cartWidthPx})`;
+                        }
+                    }
+                }, 100);
+            });
         }
 
         // 在 ShoppingCartManager 类中，修改 createPurchaseModeToggle 方法
@@ -7090,7 +7117,7 @@
 
                 const exportData = {
                     timestamp: new Date().toLocaleString('sv-SE').replace(/[-:T ]/g, '').slice(0, 14),
-                    version: '3.6.4',
+                    version: '3.6.5',
                     lists: listsData
                 };
 
@@ -7191,7 +7218,7 @@
 
         closeCart() {
             if (!this.isOpen) return;
-            this.cartContainer.style.transform = 'translateX(450px)';
+            this.cartContainer.style.transform = `translateX(${this.cartWidth})`;
             this.isOpen = false;
         }
 
