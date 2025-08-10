@@ -3,7 +3,7 @@
 // @name:zh-CN   [银河奶牛]生产采集增强
 // @name:en      MWI Production & Gathering Enhanced
 // @namespace    http://tampermonkey.net/
-// @version      3.6.5
+// @version      3.6.6
 // @description  计算生产、强化、房屋所需材料并一键购买；显示今日资产增量，统计30天总资产生成走势图；计算生产与炼金实时利润；按照目标材料数量进行采集；快速切换角色；自动收集市场订单；功能支持自定义开关。
 // @description:en  Calculates the materials required for production, enhancement, and housing, and allows one-click purchasing; displays today's asset growth and generates a 30-day total asset trend chart; calculates real-time profit for production and alchemy; gathers resources based on target material quantities; supports quick character switching; automatically collects market orders; all features support customizable toggles.
 // @author       XIxixi297
@@ -13,6 +13,8 @@
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=milkywayidle.com
 // @grant        none
 // @run-at       document-start
+// @downloadURL https://update.greasyfork.org/scripts/538797/%5B%E9%93%B6%E6%B2%B3%E5%A5%B6%E7%89%9B%5D%20%E7%94%9F%E4%BA%A7%E9%87%87%E9%9B%86%E5%A2%9E%E5%BC%BA%20%20MWI%20Production%20%20Gathering%20Enhanced.user.js
+// @updateURL https://update.greasyfork.org/scripts/538797/%5B%E9%93%B6%E6%B2%B3%E5%A5%B6%E7%89%9B%5D%20%E7%94%9F%E4%BA%A7%E9%87%87%E9%9B%86%E5%A2%9E%E5%BC%BA%20%20MWI%20Production%20%20Gathering%20Enhanced.meta.js
 // ==/UserScript==
 
 (function () {
@@ -1553,7 +1555,7 @@
                 }
             ];
             this.versionInfo = {
-                current: "3.6.5", // 当前版本
+                current: "3.6.6", // 当前版本
                 latest: null,
                 updateTime: null,
                 changelog: null
@@ -2011,6 +2013,28 @@
                     <div><strong>${LANG.settings.updateTime}:</strong> ${this.versionInfo.updateTime}</div>
                     ${this.versionInfo.changelog ? `<div><strong>${LANG.settings.changelog}:</strong> ${this.versionInfo.changelog}</div>` : ''}
                 ` : `<div>${LANG.settings.loadingInfo}</div>`}
+                    <div>
+                        <strong>
+                            <a href="https://github.com/CYR2077/MWI-Production-Gathering-Enhanced/releases/latest/download/script.user.js"
+                            target="_blank"
+                            style="color: #2196F3; text-decoration: none;"
+                            onmouseover="this.style.textDecoration='underline'"
+                            onmouseout="this.style.textDecoration='none'">
+                            更新地址 Update Link
+                            </a>
+                        </strong>
+                    </div>
+                    <div>
+                        <strong>
+                            <a href="https://hub.gitmirror.com/https://github.com/CYR2077/MWI-Production-Gathering-Enhanced/releases/latest/download/script.user.js"
+                            target="_blank"
+                            style="color: #2196F3; text-decoration: none;"
+                            onmouseover="this.style.textDecoration='underline'"
+                            onmouseout="this.style.textDecoration='none'">
+                            镜像地址(不用翻墙) Mirror Link
+                            </a>
+                        </strong>
+                    </div>
             `;
         }
 
@@ -7090,7 +7114,7 @@
 
                 const exportData = {
                     timestamp: new Date().toLocaleString('sv-SE').replace(/[-:T ]/g, '').slice(0, 14),
-                    version: '3.6.5',
+                    version: '3.6.6',
                     lists: listsData
                 };
 
