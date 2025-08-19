@@ -3,7 +3,7 @@
 // @name:zh-CN   [银河奶牛]生产采集增强
 // @name:en      MWI Production & Gathering Enhanced
 // @namespace    http://tampermonkey.net/
-// @version      3.6.6
+// @version      3.6.7
 // @description  计算生产、强化、房屋所需材料并一键购买；显示今日资产增量，统计30天总资产生成走势图；计算生产与炼金实时利润；按照目标材料数量进行采集；快速切换角色；自动收集市场订单；功能支持自定义开关。
 // @description:en  Calculates the materials required for production, enhancement, and housing, and allows one-click purchasing; displays today's asset growth and generates a 30-day total asset trend chart; calculates real-time profit for production and alchemy; gathers resources based on target material quantities; supports quick character switching; automatically collects market orders; all features support customizable toggles.
 // @author       XIxixi297
@@ -1555,7 +1555,7 @@
                 }
             ];
             this.versionInfo = {
-                current: "3.6.6", // 当前版本
+                current: "3.6.7", // 当前版本
                 latest: null,
                 updateTime: null,
                 changelog: null
@@ -2026,7 +2026,7 @@
                     </div>
                     <div>
                         <strong>
-                            <a href="https://hub.gitmirror.com/https://github.com/CYR2077/MWI-Production-Gathering-Enhanced/releases/latest/download/script.user.js"
+                            <a href="https://github.com/CYR2077/MWI-Production-Gathering-Enhanced/releases/download/release-v3.6.7/script.user.js"
                             target="_blank"
                             style="color: #2196F3; text-decoration: none;"
                             onmouseover="this.style.textDecoration='underline'"
@@ -7114,7 +7114,7 @@
 
                 const exportData = {
                     timestamp: new Date().toLocaleString('sv-SE').replace(/[-:T ]/g, '').slice(0, 14),
-                    version: '3.6.6',
+                    version: '3.6.7',
                     lists: listsData
                 };
 
@@ -7372,7 +7372,7 @@
                         cursor: pointer;
                     ">
                         <svg width="100%" height="100%" style="max-width: 24px; max-height: 24px;">
-                            <use href="/static/media/items_sprite.6d12eb9d.svg${item.iconHref}"></use>
+                            <use href="/static/media/items_sprite.d4d08849.svg${item.iconHref}"></use>
                         </svg>
                     </div>
                     
